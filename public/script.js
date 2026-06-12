@@ -1,5 +1,4 @@
 const MAX_SLOTS = 10;
-const STORAGE_KEY = 'mcvault_accounts';
 
 const grid = document.getElementById('accountGrid');
 const introBlock = document.getElementById('introBlock');
@@ -47,17 +46,9 @@ function formatTier(ranking) {
   return `${ht}${ranking.tier}`;
 }
 
-let editingIndex = null;
+let editingId = null;
 let isSubmitting = false;
-
-function loadAccounts() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-  catch { return []; }
-}
-
-function saveAccounts(accounts) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
-}
+let accountsCache = [];
 
 let toastTimer = null;
 function showToast(message, duration = 3500) {
@@ -91,7 +82,6 @@ function updateAdminUI() {
 
 function getSkinUrl(uuid) {
   if (!uuid) return '';
-  // Use Crafatar with better fallback handling
   return `https://crafatar.com/renders/body/${uuid}?overlay=true&scale=4&default=MHF_Steve`;
 }
 
@@ -101,12 +91,12 @@ function handleSkinError(img) {
   img.style.opacity = '0.5';
 }
 
-function render() {
-  const accounts = loadAccounts();
+function render(accounts) {
+  accountsCache = accounts || [];
   grid.innerHTML = '';
-  introBlock.style.display = accounts.length === 0 ? 'block' : 'none';
+  introBlock.style.display = accountsCache.length === 0 ? 'block' : 'none';
 
-  accounts.forEach((acc, index) => {
+  accountsCache.forEach((acc) => {
     const card = document.createElement('div');
     card.className = 'account-card';
 
@@ -155,18 +145,18 @@ function render() {
       <div class="pvptiers-status">Under Maintenance</div>
       ${isAdmin() ? `
       <div class="account-card__actions">
-        <button class="icon-btn" data-action="edit" data-index="${index}">Edit</button>
-        <button class="icon-btn" data-action="refresh" data-index="${index}">Refresh</button>
-        <button class="icon-btn icon-btn--danger" data-action="delete" data-index="${index}">Remove</button>
+        <button class="icon-btn" data-action="edit" data-id="${acc._id}">Edit</button>
+        <button class="icon-btn" data-action="refresh" data-id="${acc._id}" data-username="${acc.username}">Refresh</button>
+        <button class="icon-btn icon-btn--danger" data-action="delete" data-id="${acc._id}" data-username="${acc.username}">Remove</button>
       </div>` : ''}
     `;
     grid.appendChild(card);
   });
 
-  if (accounts.length < MAX_SLOTS && isAdmin()) {
+  if (accountsCache.length < MAX_SLOTS && isAdmin()) {
     const addCard = document.createElement('div');
     addCard.className = 'add-card';
-    const remaining = MAX_SLOTS - accounts.length;
+    const remaining = MAX_SLOTS - accountsCache.length;
     addCard.innerHTML = `
       <div class="add-card__circle">+</div>
       <div class="add-card__title">Add account</div>
@@ -176,10 +166,22 @@ function render() {
     grid.appendChild(addCard);
   }
 
-  const percent = Math.round((accounts.length / MAX_SLOTS) * 100);
-  capacityCount.textContent = `${accounts.length}/${MAX_SLOTS} accounts`;
+  const percent = Math.round((accountsCache.length / MAX_SLOTS) * 100);
+  capacityCount.textContent = `${accountsCache.length}/${MAX_SLOTS} accounts`;
   capacityPercent.textContent = `${percent}% full`;
   capacityFill.style.width = `${percent}%`;
+}
+
+async function loadAccounts() {
+  try {
+    const res = await fetch('/api/accounts');
+    if (!res.ok) throw new Error('Failed to load');
+    const accounts = await res.json();
+    render(accounts);
+  } catch (err) {
+    showToast('Failed to load accounts');
+    render([]);
+  }
 }
 
 async function fetchTiers(username) {
@@ -197,21 +199,21 @@ async function lookupUsername(username) {
   return data;
 }
 
-function openModal(index) {
+function openModal(id) {
   if (!isAdmin()) return;
-  editingIndex = index;
+  editingId = id;
   isSubmitting = false;
   modalError.textContent = '';
   usernameInput.value = '';
   modalSubmit.disabled = false;
-  if (index === null) {
+  if (id === null) {
     modalTitle.textContent = 'Add Account';
     modalSubmit.textContent = 'Fetch & Save';
   } else {
-    const accounts = loadAccounts();
+    const acc = accountsCache.find(a => a._id === id);
     modalTitle.textContent = 'Edit Account';
     modalSubmit.textContent = 'Update';
-    usernameInput.value = accounts[index].username;
+    usernameInput.value = acc ? acc.username : '';
   }
   modalOverlay.classList.add('show');
   setTimeout(() => usernameInput.focus(), 50);
@@ -219,7 +221,7 @@ function openModal(index) {
 
 function closeModal() {
   modalOverlay.classList.remove('show');
-  editingIndex = null;
+  editingId = null;
   isSubmitting = false;
 }
 
@@ -236,16 +238,10 @@ async function handleModalSubmit() {
   isSubmitting = true;
   modalSubmit.disabled = true;
   modalSubmit.textContent = 'Fetching...';
-  const currentEditingIndex = editingIndex;
 
   try {
     const profile = await lookupUsername(username);
     const tierData = await fetchTiers(profile.username);
-
-    const accounts = loadAccounts();
-    const normalizedUUID = profile.uuid.toLowerCase();
-    const duplicate = accounts.some((a, i) => a.uuid.toLowerCase() === normalizedUUID && i !== currentEditingIndex);
-    if (duplicate) { modalError.textContent = `${profile.username} is already in your vault.`; return; }
 
     const entry = {
       username: profile.username,
@@ -254,29 +250,41 @@ async function handleModalSubmit() {
       rankings: tierData?.rankings || {},
       leaderboardPos: tierData?.leaderboardPos || null,
       region: tierData?.region || null,
-      addedDate: currentEditingIndex === null
-        ? new Date().toISOString().split('T')[0]
-        : accounts[currentEditingIndex].addedDate,
+      addedDate: new Date().toISOString().split('T')[0]
     };
 
-    if (currentEditingIndex === null) {
-      if (accounts.length >= MAX_SLOTS) { modalError.textContent = 'Vault is full (10/10).'; return; }
-      accounts.push(entry);
+    if (editingId === null) {
+      const res = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry)
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to add');
+      }
       showToast(`${profile.username} added to your vault.`);
     } else {
-      accounts[currentEditingIndex] = entry;
+      const res = await fetch(`/api/accounts/${editingId}`, {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry)
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed to update');
+      }
       showToast(`${profile.username} updated.`);
     }
 
-    saveAccounts(accounts);
-    render();
+    await loadAccounts();
     closeModal();
   } catch (err) {
     modalError.textContent = err.message || 'Something went wrong.';
   } finally {
     isSubmitting = false;
     modalSubmit.disabled = false;
-    modalSubmit.textContent = currentEditingIndex === null ? 'Fetch & Save' : 'Update';
+    modalSubmit.textContent = editingId === null ? 'Fetch & Save' : 'Update';
   }
 }
 
@@ -288,46 +296,59 @@ modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) c
 grid.addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
   if (!btn) return;
-  const index = Number(btn.dataset.index);
-  const accounts = loadAccounts();
-  const acc = accounts[index];
-  if (!acc) return;
+  const id = btn.dataset.id;
+  const username = btn.dataset.username;
 
   if (btn.dataset.action === 'delete') {
-    accounts.splice(index, 1);
-    saveAccounts(accounts);
-    render();
-    showToast(`${acc.username} removed from vault.`);
+    if (!confirm(`Remove ${username} from vault?`)) return;
+    try {
+      const res = await fetch(`/api/accounts/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      showToast(`${username} removed from vault.`);
+      await loadAccounts();
+    } catch (err) {
+      showToast(err.message);
+    }
   }
 
-  if (btn.dataset.action === 'edit') openModal(index);
+  if (btn.dataset.action === 'edit') openModal(id);
 
   if (btn.dataset.action === 'refresh') {
     btn.disabled = true;
     btn.textContent = '...';
-    showToast(`Refreshing ${acc.username}...`);
+    showToast(`Refreshing ${username}...`);
     try {
       const [profile, tierData] = await Promise.all([
-        lookupUsername(acc.username).catch(() => null),
-        fetchTiers(acc.username),
+        lookupUsername(username).catch(() => null),
+        fetchTiers(username),
       ]);
-      const fresh = loadAccounts();
-      if (!fresh[index]) return;
+      
+      const update = {};
       if (profile) {
-        fresh[index].uuid = profile.uuid;
-        fresh[index].skinUrl = profile.skinUrl;
-        fresh[index].username = profile.username;
+        update.username = profile.username;
+        update.uuid = profile.uuid;
+        update.skinUrl = profile.skinUrl;
       }
       if (tierData) {
-        fresh[index].rankings = tierData.rankings || {};
-        fresh[index].leaderboardPos = tierData.leaderboardPos || null;
-        fresh[index].region = tierData.region || null;
+        update.rankings = tierData.rankings || {};
+        update.leaderboardPos = tierData.leaderboardPos || null;
+        update.region = tierData.region || null;
       }
-      saveAccounts(fresh);
-      render();
-      showToast(`${fresh[index].username} refreshed.`);
-    } catch {
-      showToast(`Could not refresh ${acc.username}.`);
+
+      const res = await fetch(`/api/accounts/${id}`, {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(update)
+      });
+      
+      if (!res.ok) throw new Error('Refresh failed');
+      showToast(`${username} refreshed.`);
+      await loadAccounts();
+    } catch (err) {
+      showToast(`Could not refresh ${username}.`);
     }
   }
 });
@@ -368,14 +389,9 @@ async function loadAdminList() {
       </div>
     `).join('');
     
-    // Show create form button only if less than 2 admins
     const canCreate = admins.length < 2;
     showCreateForm.style.display = canCreate ? 'block' : 'none';
-    
-    // Hide create form if we're at max
-    if (!canCreate) {
-      createAdminForm.style.display = 'none';
-    }
+    if (!canCreate) createAdminForm.style.display = 'none';
   } catch (err) {
     adminList.innerHTML = `<div class="modal__error">${err.message}</div>`;
   }
@@ -404,7 +420,7 @@ showCreateForm.addEventListener('click', () => {
 
 cancelCreateAdmin.addEventListener('click', () => {
   createAdminForm.style.display = 'none';
-  loadAdminList(); // This will show/hide the create button correctly
+  loadAdminList();
 });
 
 submitCreateAdmin.addEventListener('click', async () => {
@@ -456,16 +472,15 @@ adminModalOverlay.addEventListener('click', (e) => {
   if (e.target === adminModalOverlay) adminModalOverlay.classList.remove('show');
 });
 
-// Double-click brand mark to open admin management
 document.querySelector('.brand__mark').addEventListener('dblclick', openAdminModal);
 
 logoutBtn.addEventListener('click', () => {
   localStorage.removeItem('mcvault_token');
   localStorage.removeItem('mcvault_admin_name');
   updateAdminUI();
-  render();
+  loadAccounts();
   showToast('Logged out.');
 });
 
 updateAdminUI();
-render();
+loadAccounts();
