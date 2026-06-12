@@ -166,6 +166,24 @@ body {
 .tier-badge--ranked .tier-badge__mode { color: var(--text-muted); }
 .tier-badge--ranked .tier-badge__rank { color: #e8e8e8; }
 
+.tiers__empty { font-size: 12px; color: var(--text-faint); font-style: italic; }
+
+/* tier-based color coding */
+.tier-1 { border-color: #6b5a1f; background: #2a2410; }
+.tier-1 .tier-badge__rank { color: #ffd76b; }
+
+.tier-2 { border-color: #5a4f1f; background: #25220f; }
+.tier-2 .tier-badge__rank { color: #e8c96b; }
+
+.tier-3 { border-color: #3f4f3f; background: #16211a; }
+.tier-3 .tier-badge__rank { color: #8fdca0; }
+
+.tier-4 { border-color: #2f4250; background: #11202a; }
+.tier-4 .tier-badge__rank { color: #7ec8e3; }
+
+.tier-5 { border-color: #3a3a4a; background: #1a1a26; }
+.tier-5 .tier-badge__rank { color: #aab0e0; }
+
 .account-card__actions {
   display: flex; gap: 8px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border-soft);
 }
