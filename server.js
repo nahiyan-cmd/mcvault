@@ -11,11 +11,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'default_secret_change_me';
 
 const DATA_DIR = path.join(__dirname, 'data');
 const ADMINS_FILE = path.join(DATA_DIR, 'admins.json');
-const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(ADMINS_FILE)) fs.writeFileSync(ADMINS_FILE, '[]');
-if (!fs.existsSync(ACCOUNTS_FILE)) fs.writeFileSync(ACCOUNTS_FILE, '[]');
 
 function loadJSON(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
@@ -174,97 +172,23 @@ app.get('/api/setup-status', (req, res) => {
 // ─── RESET ────────────────────────────────────────────────────────────────────────
 app.get('/api/reset-all', (req, res) => {
   saveJSON(ADMINS_FILE, []);
-  saveJSON(ACCOUNTS_FILE, []);
   res.json({ message: 'All data cleared' });
 });
 
-// ─── ACCOUNTS ───────────────────────────────────────────────────────────────────
-app.get('/api/accounts', (req, res) => {
-  const accounts = loadJSON(ACCOUNTS_FILE);
-  res.json(accounts);
-});
-
-app.post('/api/accounts', adminAuth, (req, res) => {
-  const { username, uuid, skinUrl, rankings, leaderboardPos, region, addedDate } = req.body;
-  if (!username || !uuid) return res.status(400).json({ message: 'Username and UUID required' });
-
-  let accounts = loadJSON(ACCOUNTS_FILE);
-  if (accounts.length >= 10) return res.status(400).json({ message: 'Vault is full (10/10)' });
-
-  const exists = accounts.some(a => a.uuid.toLowerCase() === uuid.toLowerCase());
-  if (exists) return res.status(400).json({ message: 'Account already in vault' });
-
-  const account = {
-    _id: Date.now().toString(),
-    username,
-    uuid: uuid.toLowerCase(),
-    skinUrl,
-    rankings: rankings || {},
-    leaderboardPos,
-    region,
-    addedDate,
-    order: accounts.length
-  };
-
-  accounts.push(account);
-  saveJSON(ACCOUNTS_FILE, accounts);
-  res.status(201).json(account);
-});
-
-app.put('/api/accounts/:id', adminAuth, (req, res) => {
-  const { username, uuid, skinUrl, rankings, leaderboardPos, region } = req.body;
-  let accounts = loadJSON(ACCOUNTS_FILE);
-  const account = accounts.find(a => a._id === req.params.id);
-  if (!account) return res.status(404).json({ message: 'Account not found' });
-
-  if (username) account.username = username;
-  if (uuid) account.uuid = uuid.toLowerCase();
-  if (skinUrl) account.skinUrl = skinUrl;
-  if (rankings) account.rankings = rankings;
-  if (leaderboardPos !== undefined) account.leaderboardPos = leaderboardPos;
-  if (region) account.region = region;
-
-  saveJSON(ACCOUNTS_FILE, accounts);
-  res.json(account);
-});
-
-app.delete('/api/accounts/:id', adminAuth, (req, res) => {
-  let accounts = loadJSON(ACCOUNTS_FILE);
-  accounts = accounts.filter(a => a._id !== req.params.id);
-  saveJSON(ACCOUNTS_FILE, accounts);
-  res.json({ message: 'Account deleted' });
-});
-
-app.delete('/api/accounts', adminAuth, (req, res) => {
-  saveJSON(ACCOUNTS_FILE, []);
-  res.json({ message: 'All accounts cleared' });
-});
-
 // ─── MINECRAFT APIs ─────────────────────────────────────────────────────────────
-// Use Ashcon API for reliable username -> UUID lookup (keeps original skin/tier logic)
+// Original Mojang API from your files
 app.get('/api/lookup/:username', async (req, res) => {
   try {
-    const axios = require('axios');
-    const username = req.params.username;
-    
-    // Ashcon API - reliable, returns UUID + username
-    const { data } = await axios.get(
-      `https://api.ashcon.app/mojang/v2/user/${encodeURIComponent(username)}`,
-      { timeout: 8000, headers: { 'Accept': 'application/json' } }
+    const { data } = await require('axios').get(
+      `https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(req.params.username)}`,
+      { timeout: 5000 }
     );
-    
-    const uuid = data.uuid.replace(/-/g, '');
-    const name = data.username;
-    
+    const uuid = data.id;
     // Original skin URL from your files
     const skinUrl = `https://crafatar.com/renders/body/${uuid}?overlay=true&scale=4`;
-    
-    res.json({ username: name, uuid, skinUrl });
+    res.json({ username: data.name, uuid, skinUrl });
   } catch (err) {
-    console.error('Lookup error:', err.response?.status, err.message);
-    res.status(404).json({ 
-      message: 'Player not found. Check spelling or try a different username.' 
-    });
+    res.status(404).json({ message: 'Player not found' });
   }
 });
 
