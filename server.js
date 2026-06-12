@@ -22,7 +22,7 @@ app.get('/api/lookup/:username', async (req, res) => {
     );
     const uuid = mojangRes.data.id;
     const correctUsername = mojangRes.data.name;
-    const skinUrl = `https://crafatar.com/renders/body/${uuid}?overlay`;
+    const skinUrl = `https://mc-heads.net/body/${uuid}/right`;
     res.json({ username: correctUsername, uuid, skinUrl });
   } catch (err) {
     if (err.response?.status === 404) {
