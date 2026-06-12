@@ -89,6 +89,18 @@ function updateAdminUI() {
   }
 }
 
+function getSkinUrl(uuid) {
+  if (!uuid) return '';
+  // Use Crafatar with better fallback handling
+  return `https://crafatar.com/renders/body/${uuid}?overlay=true&scale=4&default=MHF_Steve`;
+}
+
+function handleSkinError(img) {
+  img.onerror = null;
+  img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="64" height="64"%3E%3Crect width="64" height="64" fill="%23222"/%3E%3Ctext x="32" y="36" text-anchor="middle" fill="%23666" font-size="24"%3F%3C/text%3E%3C/svg%3E';
+  img.style.opacity = '0.5';
+}
+
 function render() {
   const accounts = loadAccounts();
   grid.innerHTML = '';
@@ -122,9 +134,11 @@ function render() {
     const bestTierStr = bestTier ? formatTier(bestTier) : null;
     const isGM = allTiers.some(r => Number(r.tier) === 1 && Number(r.pos) === 0);
 
+    const skinUrl = getSkinUrl(acc.uuid);
+
     card.innerHTML = `
       <div class="account-card__skin">
-        <img src="${acc.skinUrl || ''}" alt="${acc.username}" onerror="this.style.display='none'" />
+        <img src="${skinUrl}" alt="${acc.username}" onerror="handleSkinError(this)" />
       </div>
       <div class="account-card__name">
         ${acc.username}
@@ -335,6 +349,12 @@ async function loadAdminList() {
     if (!res.ok) throw new Error('Failed to load admins');
     const admins = await res.json();
     
+    if (admins.length === 0) {
+      adminList.innerHTML = '<div style="color: var(--text-faint); font-size: 12px; text-align: center; padding: 12px;">No admins found</div>';
+      showCreateForm.style.display = 'block';
+      return;
+    }
+    
     adminList.innerHTML = admins.map(a => `
       <div class="admin-item">
         <div class="admin-item__info">
@@ -348,7 +368,14 @@ async function loadAdminList() {
       </div>
     `).join('');
     
-    showCreateForm.style.display = admins.length >= 2 ? 'none' : 'block';
+    // Show create form button only if less than 2 admins
+    const canCreate = admins.length < 2;
+    showCreateForm.style.display = canCreate ? 'block' : 'none';
+    
+    // Hide create form if we're at max
+    if (!canCreate) {
+      createAdminForm.style.display = 'none';
+    }
   } catch (err) {
     adminList.innerHTML = `<div class="modal__error">${err.message}</div>`;
   }
@@ -377,7 +404,7 @@ showCreateForm.addEventListener('click', () => {
 
 cancelCreateAdmin.addEventListener('click', () => {
   createAdminForm.style.display = 'none';
-  showCreateForm.style.display = 'block';
+  loadAdminList(); // This will show/hide the create button correctly
 });
 
 submitCreateAdmin.addEventListener('click', async () => {
@@ -395,6 +422,9 @@ submitCreateAdmin.addEventListener('click', async () => {
   }
 
   submitCreateAdmin.disabled = true;
+  submitCreateAdmin.textContent = 'Creating...';
+  adminModalError.textContent = '';
+
   try {
     const res = await fetch('/api/admins', {
       method: 'POST',
@@ -404,17 +434,17 @@ submitCreateAdmin.addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message);
     
-    showToast('Admin created');
+    showToast('Admin created successfully');
     document.getElementById('newAdminUser').value = '';
     document.getElementById('newAdminPass').value = '';
     document.getElementById('newAdminCode').value = '';
     createAdminForm.style.display = 'none';
-    showCreateForm.style.display = 'block';
     loadAdminList();
   } catch (err) {
     adminModalError.textContent = err.message;
   } finally {
     submitCreateAdmin.disabled = false;
+    submitCreateAdmin.textContent = 'Create';
   }
 });
 
