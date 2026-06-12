@@ -169,21 +169,28 @@
 </div>
 
 <script>
-  const isSetup = !new URLSearchParams(window.location.search).has('login');
+  let isFirstSetup = false;
 
   async function checkSetup() {
     try {
       const res = await fetch('/api/setup-status');
       const data = await res.json();
-      if (!data.setupComplete) {
+      isFirstSetup = !data.setupComplete;
+      
+      if (isFirstSetup) {
         document.getElementById('pageTitle').textContent = 'Setup First Admin';
         document.getElementById('setupNotice').style.display = 'block';
         document.getElementById('loginBtn').textContent = 'Create Admin';
       }
-    } catch {}
+    } catch (err) {
+      console.error('Setup check failed:', err);
+    }
   }
+
+  // Check setup on load
   checkSetup();
 
+  // Redirect if already logged in
   if (localStorage.getItem('mcvault_token')) {
     window.location.href = '/';
   }
@@ -191,7 +198,7 @@
   const loginBtn = document.getElementById('loginBtn');
   const loginError = document.getElementById('loginError');
 
-  async function doLogin() {
+  async function doSubmit() {
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
     const code = document.getElementById('loginCode').value.trim();
@@ -206,33 +213,35 @@
     }
 
     loginBtn.disabled = true;
-    loginBtn.textContent = 'Processing...';
+    loginBtn.textContent = isFirstSetup ? 'Creating...' : 'Logging in...';
     loginError.textContent = '';
 
-    const isFirstSetup = loginBtn.textContent === 'Create Admin';
+    const endpoint = isFirstSetup ? '/api/setup' : '/api/admin/login';
 
     try {
-      const endpoint = isFirstSetup ? '/api/setup' : '/api/admin/login';
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password, code })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed.');
+      
+      if (!res.ok) {
+        throw new Error(data.message || (isFirstSetup ? 'Setup failed' : 'Login failed'));
+      }
+      
       localStorage.setItem('mcvault_token', data.token);
       localStorage.setItem('mcvault_admin_name', data.username);
       window.location.href = '/';
     } catch (err) {
       loginError.textContent = err.message;
-    } finally {
       loginBtn.disabled = false;
       loginBtn.textContent = isFirstSetup ? 'Create Admin' : 'Login';
     }
   }
 
-  loginBtn.addEventListener('click', doLogin);
-  document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  loginBtn.addEventListener('click', doSubmit);
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') doSubmit(); });
 </script>
 </body>
 </html>
