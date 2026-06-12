@@ -44,7 +44,6 @@ app.get('/api/tiers/:username', async (req, res) => {
     );
     const uuid = mojangRes.data.id;
 
-    // MCTiers needs dashes: 8-4-4-4-12
     const uuidDashed = `${uuid.slice(0,8)}-${uuid.slice(8,12)}-${uuid.slice(12,16)}-${uuid.slice(16,20)}-${uuid.slice(20)}`;
     console.log(`[tiers] ${username} => ${uuidDashed}`);
 
@@ -52,9 +51,6 @@ app.get('/api/tiers/:username', async (req, res) => {
     const data = tiersRes.data;
     console.log(`[tiers] raw response for ${username}:`, JSON.stringify(data));
 
-    // Real API shape: { rankings: { pot: { tier: 4, pos: 1, peak_tier, peak_pos, retired }, ... }, overall: 63932 }
-    // pos=0 => HT (High Tier), pos=1 => LT (Low Tier)
-    // overall is a leaderboard rank number, not a tier string
     res.json({
       uuid,
       rankings: data.rankings || {},
