@@ -1,48 +1,30 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'default_secret_change_me';
-const MONGODB_URI = process.env.MONGODB_URI;
 
-if (!MONGODB_URI) {
-  console.error('ERROR: MONGODB_URI not set in .env');
-  process.exit(1);
+const DATA_DIR = path.join(__dirname, 'data');
+const ADMINS_FILE = path.join(DATA_DIR, 'admins.json');
+const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
+
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(ADMINS_FILE)) fs.writeFileSync(ADMINS_FILE, '[]');
+if (!fs.existsSync(ACCOUNTS_FILE)) fs.writeFileSync(ACCOUNTS_FILE, '[]');
+
+function loadJSON(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch { return []; }
 }
 
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => {
-    console.error('MongoDB connection failed:', err.message);
-    process.exit(1);
-  });
-
-const adminSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  passwordHash: { type: String, required: true },
-  codeHash: { type: String, required: true },
-  code: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const accountSchema = new mongoose.Schema({
-  username: { type: String, required: true },
-  uuid: { type: String, required: true },
-  skinUrl: String,
-  rankings: { type: Object, default: {} },
-  leaderboardPos: Number,
-  region: String,
-  addedDate: String,
-  order: { type: Number, default: 0 }
-});
-
-const Admin = mongoose.model('Admin', adminSchema);
-const Account = mongoose.model('Account', accountSchema);
+function saveJSON(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -58,6 +40,7 @@ function adminAuth(req, res, next) {
   }
 }
 
+// ─── SETUP ──────────────────────────────────────────────────────────────────────
 app.post('/api/setup', async (req, res) => {
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
@@ -70,32 +53,36 @@ app.post('/api/setup', async (req, res) => {
     return res.status(400).json({ message: 'Username 3+ chars, password 4+ chars' });
   }
 
-  await Admin.deleteOne({ username });
+  let admins = loadJSON(ADMINS_FILE);
+  admins = admins.filter(a => a.username !== username);
 
   const passwordHash = await bcrypt.hash(password, 12);
   const codeHash = await bcrypt.hash(code, 12);
 
-  const admin = new Admin({ username, passwordHash, codeHash, code });
-  await admin.save();
+  admins.push({
+    username,
+    passwordHash,
+    codeHash,
+    code,
+    createdAt: new Date().toISOString()
+  });
 
-  const allAdmins = await Admin.find().sort({ createdAt: 1 });
-  if (allAdmins.length > 2) {
-    for (const a of allAdmins.slice(0, allAdmins.length - 2)) {
-      await Admin.deleteOne({ _id: a._id });
-    }
-  }
+  if (admins.length > 2) admins = admins.slice(-2);
+  saveJSON(ADMINS_FILE, admins);
 
   const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ token, username, message: 'Admin created' });
 });
 
+// ─── LOGIN ──────────────────────────────────────────────────────────────────────
 app.post('/api/admin/login', async (req, res) => {
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
     return res.status(400).json({ message: 'All fields required' });
   }
 
-  const admin = await Admin.findOne({ username });
+  const admins = loadJSON(ADMINS_FILE);
+  const admin = admins.find(a => a.username === username);
   if (!admin) return res.status(401).json({ message: 'Invalid credentials' });
 
   const validPass = await bcrypt.compare(password, admin.passwordHash);
@@ -109,13 +96,14 @@ app.post('/api/admin/login', async (req, res) => {
   res.json({ token, username });
 });
 
-app.get('/api/admins', adminAuth, async (req, res) => {
-  const admins = await Admin.find({}, { passwordHash: 0, codeHash: 0 });
-  res.json(admins.map(a => ({
+// ─── ADMINS ─────────────────────────────────────────────────────────────────────
+app.get('/api/admins', adminAuth, (req, res) => {
+  const admins = loadJSON(ADMINS_FILE).map(a => ({
     username: a.username,
     code: a.code,
     createdAt: a.createdAt
-  })));
+  }));
+  res.json(admins);
 });
 
 app.post('/api/admins', adminAuth, async (req, res) => {
@@ -127,33 +115,43 @@ app.post('/api/admins', adminAuth, async (req, res) => {
     return res.status(400).json({ message: 'Code must be 6 digits' });
   }
 
-  const count = await Admin.countDocuments();
-  if (count >= 2) return res.status(400).json({ message: 'Max 2 admins reached' });
-
-  const exists = await Admin.findOne({ username });
-  if (exists) return res.status(400).json({ message: 'Admin already exists' });
+  let admins = loadJSON(ADMINS_FILE);
+  if (admins.length >= 2) return res.status(400).json({ message: 'Max 2 admins reached' });
+  if (admins.some(a => a.username === username)) {
+    return res.status(400).json({ message: 'Admin already exists' });
+  }
 
   const passwordHash = await bcrypt.hash(password, 12);
   const codeHash = await bcrypt.hash(code, 12);
 
-  const admin = new Admin({ username, passwordHash, codeHash, code });
-  await admin.save();
+  admins.push({
+    username,
+    passwordHash,
+    codeHash,
+    code,
+    createdAt: new Date().toISOString()
+  });
+
+  saveJSON(ADMINS_FILE, admins);
   res.status(201).json({ message: 'Admin created' });
 });
 
-app.delete('/api/admins/:username', adminAuth, async (req, res) => {
-  const count = await Admin.countDocuments();
-  if (count <= 1) return res.status(400).json({ message: 'Cannot delete last admin' });
+app.delete('/api/admins/:username', adminAuth, (req, res) => {
+  let admins = loadJSON(ADMINS_FILE);
+  if (admins.length <= 1) return res.status(400).json({ message: 'Cannot delete last admin' });
 
-  const result = await Admin.deleteOne({ username: req.params.username });
-  if (result.deletedCount === 0) return res.status(404).json({ message: 'Admin not found' });
+  const idx = admins.findIndex(a => a.username === req.params.username);
+  if (idx === -1) return res.status(404).json({ message: 'Admin not found' });
 
+  admins.splice(idx, 1);
+  saveJSON(ADMINS_FILE, admins);
   res.json({ message: 'Admin deleted' });
 });
 
 app.patch('/api/admins/:username', adminAuth, async (req, res) => {
   const { password, code } = req.body;
-  const admin = await Admin.findOne({ username: req.params.username });
+  let admins = loadJSON(ADMINS_FILE);
+  const admin = admins.find(a => a.username === req.params.username);
   if (!admin) return res.status(404).json({ message: 'Admin not found' });
 
   if (password) admin.passwordHash = await bcrypt.hash(password, 12);
@@ -163,49 +161,60 @@ app.patch('/api/admins/:username', adminAuth, async (req, res) => {
     admin.codeHash = await bcrypt.hash(code, 12);
   }
 
-  await admin.save();
+  saveJSON(ADMINS_FILE, admins);
   res.json({ message: 'Admin updated' });
 });
 
-app.get('/api/setup-status', async (req, res) => {
-  const count = await Admin.countDocuments();
-  res.json({ setupComplete: count > 0, adminCount: count });
+// ─── SETUP STATUS ───────────────────────────────────────────────────────────────
+app.get('/api/setup-status', (req, res) => {
+  const admins = loadJSON(ADMINS_FILE);
+  res.json({ setupComplete: admins.length > 0, adminCount: admins.length });
 });
 
-app.get('/api/reset-admins', async (req, res) => {
-  await Admin.deleteMany({});
-  await Account.deleteMany({});
+// ─── RESET ────────────────────────────────────────────────────────────────────────
+app.get('/api/reset-all', (req, res) => {
+  saveJSON(ADMINS_FILE, []);
+  saveJSON(ACCOUNTS_FILE, []);
   res.json({ message: 'All data cleared' });
 });
 
-app.get('/api/accounts', async (req, res) => {
-  const accounts = await Account.find().sort({ order: 1 });
+// ─── ACCOUNTS ───────────────────────────────────────────────────────────────────
+app.get('/api/accounts', (req, res) => {
+  const accounts = loadJSON(ACCOUNTS_FILE);
   res.json(accounts);
 });
 
-app.post('/api/accounts', adminAuth, async (req, res) => {
+app.post('/api/accounts', adminAuth, (req, res) => {
   const { username, uuid, skinUrl, rankings, leaderboardPos, region, addedDate } = req.body;
   if (!username || !uuid) return res.status(400).json({ message: 'Username and UUID required' });
 
-  const count = await Account.countDocuments();
-  if (count >= 10) return res.status(400).json({ message: 'Vault is full (10/10)' });
+  let accounts = loadJSON(ACCOUNTS_FILE);
+  if (accounts.length >= 10) return res.status(400).json({ message: 'Vault is full (10/10)' });
 
-  const exists = await Account.findOne({ uuid: uuid.toLowerCase() });
+  const exists = accounts.some(a => a.uuid.toLowerCase() === uuid.toLowerCase());
   if (exists) return res.status(400).json({ message: 'Account already in vault' });
 
-  const account = new Account({
-    username, uuid: uuid.toLowerCase(), skinUrl,
-    rankings: rankings || {}, leaderboardPos, region, addedDate,
-    order: count
-  });
+  const account = {
+    _id: Date.now().toString(),
+    username,
+    uuid: uuid.toLowerCase(),
+    skinUrl,
+    rankings: rankings || {},
+    leaderboardPos,
+    region,
+    addedDate,
+    order: accounts.length
+  };
 
-  await account.save();
+  accounts.push(account);
+  saveJSON(ACCOUNTS_FILE, accounts);
   res.status(201).json(account);
 });
 
-app.put('/api/accounts/:id', adminAuth, async (req, res) => {
+app.put('/api/accounts/:id', adminAuth, (req, res) => {
   const { username, uuid, skinUrl, rankings, leaderboardPos, region } = req.body;
-  const account = await Account.findById(req.params.id);
+  let accounts = loadJSON(ACCOUNTS_FILE);
+  const account = accounts.find(a => a._id === req.params.id);
   if (!account) return res.status(404).json({ message: 'Account not found' });
 
   if (username) account.username = username;
@@ -215,20 +224,23 @@ app.put('/api/accounts/:id', adminAuth, async (req, res) => {
   if (leaderboardPos !== undefined) account.leaderboardPos = leaderboardPos;
   if (region) account.region = region;
 
-  await account.save();
+  saveJSON(ACCOUNTS_FILE, accounts);
   res.json(account);
 });
 
-app.delete('/api/accounts/:id', adminAuth, async (req, res) => {
-  await Account.findByIdAndDelete(req.params.id);
+app.delete('/api/accounts/:id', adminAuth, (req, res) => {
+  let accounts = loadJSON(ACCOUNTS_FILE);
+  accounts = accounts.filter(a => a._id !== req.params.id);
+  saveJSON(ACCOUNTS_FILE, accounts);
   res.json({ message: 'Account deleted' });
 });
 
-app.delete('/api/accounts', adminAuth, async (req, res) => {
-  await Account.deleteMany({});
+app.delete('/api/accounts', adminAuth, (req, res) => {
+  saveJSON(ACCOUNTS_FILE, []);
   res.json({ message: 'All accounts cleared' });
 });
 
+// ─── MINECRAFT APIs ─────────────────────────────────────────────────────────────
 app.get('/api/lookup/:username', async (req, res) => {
   try {
     const { data } = await require('axios').get(
@@ -255,6 +267,7 @@ app.get('/api/tiers/:username', async (req, res) => {
   }
 });
 
+// ─── HEALTH ─────────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => {
