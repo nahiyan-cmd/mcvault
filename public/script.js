@@ -7,6 +7,10 @@ const capacityCount = document.getElementById('capacityCount');
 const capacityPercent = document.getElementById('capacityPercent');
 const capacityFill = document.getElementById('capacityFill');
 const toast = document.getElementById('toast');
+const adminBadge = document.getElementById('adminBadge');
+const adminBadgeName = document.getElementById('adminBadgeName');
+const logoutBtn = document.getElementById('logoutBtn');
+const adminFooterLink = document.getElementById('adminFooterLink');
 
 const modalOverlay = document.getElementById('modalOverlay');
 const modalTitle = document.getElementById('modalTitle');
@@ -15,7 +19,6 @@ const modalError = document.getElementById('modalError');
 const modalCancel = document.getElementById('modalCancel');
 const modalSubmit = document.getElementById('modalSubmit');
 
-// Real MCTiers API ranking keys + display labels
 const GAMEMODES = [
   { key: 'sword',     label: 'Sword'   },
   { key: 'uhc',       label: 'UHC'     },
@@ -28,10 +31,9 @@ const GAMEMODES = [
   { key: 'cart',      label: 'Cart'    },
 ];
 
-// Convert MCTiers numeric tier + pos into display string e.g. "HT3", "LT5"
 function formatTier(ranking) {
   if (!ranking) return null;
-  if (ranking.retired) return null; // treat retired as unranked
+  if (ranking.retired) return null;
   const ht = ranking.pos === 0 ? 'HT' : 'LT';
   return `${ht}${ranking.tier}`;
 }
@@ -54,6 +56,28 @@ function showToast(message, duration = 3500) {
   toast.textContent = message;
   toast.classList.add('show');
   toastTimer = setTimeout(() => { toast.classList.remove('show'); toastTimer = null; }, duration);
+}
+
+function isAdmin() {
+  return !!localStorage.getItem('mcvault_token');
+}
+
+function getAuthHeaders() {
+  const token = localStorage.getItem('mcvault_token');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+function updateAdminUI() {
+  const token = localStorage.getItem('mcvault_token');
+  const name = localStorage.getItem('mcvault_admin_name');
+  if (token && name) {
+    adminBadge.style.display = 'flex';
+    adminBadgeName.textContent = name;
+    adminFooterLink.style.display = 'none';
+  } else {
+    adminBadge.style.display = 'none';
+    adminFooterLink.style.display = 'inline';
+  }
 }
 
 function render() {
@@ -80,7 +104,6 @@ function render() {
       `;
     }).join('');
 
-    // Best tier for display next to name — find highest (lowest tier number + HT preferred)
     const allTiers = GAMEMODES.map(({ key }) => rankings[key]).filter(Boolean).filter(r => !r.retired);
     const bestTier = allTiers.sort((a, b) => {
       const ta = Number(a.tier), tb = Number(b.tier);
@@ -103,20 +126,21 @@ function render() {
       <div class="account-card__uuid">${acc.uuid || ''}</div>
       <div class="account-card__date">Added ${acc.addedDate}</div>
       <div class="section-label">MCTiers</div>
-      <div class="tiers">${tiersHtml || '<span class="tiers__empty">None gamemode tested</span>'}</div>
+      <div class="tiers">${tiersHtml || '<span class="tiers__empty">No gamemode tested</span>'}</div>
       <div class="rainbow-divider"></div>
       <div class="section-label">PvPTiers</div>
       <div class="pvptiers-status">Under Maintenance</div>
+      ${isAdmin() ? `
       <div class="account-card__actions">
         <button class="icon-btn" data-action="edit" data-index="${index}">Edit</button>
         <button class="icon-btn" data-action="refresh" data-index="${index}">Refresh</button>
         <button class="icon-btn icon-btn--danger" data-action="delete" data-index="${index}">Remove</button>
-      </div>
+      </div>` : ''}
     `;
     grid.appendChild(card);
   });
 
-  if (accounts.length < MAX_SLOTS) {
+  if (accounts.length < MAX_SLOTS && isAdmin()) {
     const addCard = document.createElement('div');
     addCard.className = 'add-card';
     const remaining = MAX_SLOTS - accounts.length;
@@ -151,6 +175,7 @@ async function lookupUsername(username) {
 }
 
 function openModal(index) {
+  if (!isAdmin()) return;
   editingIndex = index;
   isSubmitting = false;
   modalError.textContent = '';
@@ -176,11 +201,11 @@ function closeModal() {
 }
 
 async function handleModalSubmit() {
-  if (isSubmitting) return;
+  if (isSubmitting || !isAdmin()) return;
   const username = usernameInput.value.trim();
   if (!username) { modalError.textContent = 'Please enter a username.'; return; }
   if (!/^[a-zA-Z0-9_]{3,16}$/.test(username)) {
-    modalError.textContent = 'Usernames must be 3–16 characters (letters, numbers, underscores).';
+    modalError.textContent = 'Usernames must be 3-16 characters (letters, numbers, underscores).';
     return;
   }
 
@@ -284,4 +309,13 @@ grid.addEventListener('click', async (e) => {
   }
 });
 
+logoutBtn.addEventListener('click', () => {
+  localStorage.removeItem('mcvault_token');
+  localStorage.removeItem('mcvault_admin_name');
+  updateAdminUI();
+  render();
+  showToast('Logged out.');
+});
+
+updateAdminUI();
 render();
