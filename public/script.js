@@ -15,20 +15,21 @@ const modalError = document.getElementById('modalError');
 const modalCancel = document.getElementById('modalCancel');
 const modalSubmit = document.getElementById('modalSubmit');
 
-// key = field in MCTiers API response, label = what we show on the badge
 const GAMEMODES = [
-  { key: 'sword', label: 'Sword' },
-  { key: 'uhc', label: 'UHC' },
-  { key: 'diamondPot', label: 'Pot' },
+  { key: 'sword',        label: 'Sword'   },
+  { key: 'uhc',          label: 'UHC'     },
+  { key: 'diamondPot',   label: 'DiaPot'  },
   { key: 'netheritePot', label: 'NethPot' },
-  { key: 'diamondSmp', label: 'SMP' },
-  { key: 'axe', label: 'Axe' },
-  { key: 'mace', label: 'Mace' },
-  { key: 'crystal', label: 'Crystal' },
-  { key: 'cart', label: 'Cart' },
+  { key: 'smp',          label: 'SMP'     },
+  { key: 'diamondSmp',   label: 'DiaSMP'  },
+  { key: 'axe',          label: 'Axe'     },
+  { key: 'mace',         label: 'Mace'    },
+  { key: 'crystal',      label: 'Crystal' },
+  { key: 'cart',         label: 'Cart'    },
 ];
 
 let editingIndex = null;
+let isSubmitting = false;
 
 function loadAccounts() {
   try {
@@ -42,10 +43,15 @@ function saveAccounts(accounts) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
 }
 
+let toastTimer = null;
 function showToast(message, duration = 3500) {
+  if (toastTimer) clearTimeout(toastTimer);
   toast.textContent = message;
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), duration);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('show');
+    toastTimer = null;
+  }, duration);
 }
 
 function render() {
@@ -79,7 +85,7 @@ function render() {
           ? `<img src="${acc.skinUrl}" alt="${acc.username} skin render" />`
           : `<span style="color:var(--text-faint); font-size:12px;">No skin</span>`
         }
-        <div class="tier-meter" style="--pct: ${tierPercent}">
+        <div class="tier-meter" data-pct="${tierPercent}">
           <span>${tierPercent}%</span>
         </div>
       </div>
@@ -97,13 +103,20 @@ function render() {
     grid.appendChild(card);
   });
 
+  // Apply conic-gradient via JS — avoids CSS calc(var(--pct)*1%) browser inconsistency
+  grid.querySelectorAll('.tier-meter[data-pct]').forEach(el => {
+    const pct = el.dataset.pct;
+    el.style.background = `conic-gradient(var(--accent) ${pct}%, var(--surface-2) 0deg)`;
+  });
+
   if (accounts.length < MAX_SLOTS) {
     const addCard = document.createElement('div');
     addCard.className = 'add-card';
+    const remaining = MAX_SLOTS - accounts.length;
     addCard.innerHTML = `
       <div class="add-card__circle">+</div>
       <div class="add-card__title">Add account</div>
-      <div class="add-card__sub">${MAX_SLOTS - accounts.length} slot${MAX_SLOTS - accounts.length === 1 ? '' : 's'} remaining</div>
+      <div class="add-card__sub">${remaining} slot${remaining === 1 ? '' : 's'} remaining</div>
     `;
     addCard.addEventListener('click', () => openModal(null));
     grid.appendChild(addCard);
@@ -128,16 +141,16 @@ async function fetchTiers(username) {
 async function lookupUsername(username) {
   const res = await fetch(`/api/lookup/${encodeURIComponent(username)}`);
   const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.message || 'Lookup failed.');
-  }
+  if (!res.ok) throw new Error(data.message || 'Lookup failed.');
   return data;
 }
 
 function openModal(index) {
   editingIndex = index;
+  isSubmitting = false;
   modalError.textContent = '';
   usernameInput.value = '';
+  modalSubmit.disabled = false;
 
   if (index === null) {
     modalTitle.textContent = 'Add Account';
@@ -150,37 +163,44 @@ function openModal(index) {
   }
 
   modalOverlay.classList.add('show');
-  usernameInput.focus();
+  setTimeout(() => usernameInput.focus(), 50);
 }
 
 function closeModal() {
   modalOverlay.classList.remove('show');
   editingIndex = null;
+  isSubmitting = false;
 }
 
 async function handleModalSubmit() {
-  const username = usernameInput.value.trim();
+  if (isSubmitting) return;
 
+  const username = usernameInput.value.trim();
   if (!username) {
     modalError.textContent = 'Please enter a username.';
     return;
   }
+  if (!/^[a-zA-Z0-9_]{3,16}$/.test(username)) {
+    modalError.textContent = 'Usernames must be 3–16 characters (letters, numbers, underscores).';
+    return;
+  }
 
   modalError.textContent = '';
+  isSubmitting = true;
   modalSubmit.disabled = true;
   modalSubmit.textContent = 'Fetching...';
+
+  const currentEditingIndex = editingIndex;
 
   try {
     const profile = await lookupUsername(username);
     const tierData = await fetchTiers(profile.username);
 
     const accounts = loadAccounts();
-
-    const duplicate = accounts.some((a, i) => a.uuid === profile.uuid && i !== editingIndex);
+    const normalizedUUID = profile.uuid.toLowerCase();
+    const duplicate = accounts.some((a, i) => a.uuid.toLowerCase() === normalizedUUID && i !== currentEditingIndex);
     if (duplicate) {
       modalError.textContent = `${profile.username} is already in your vault.`;
-      modalSubmit.disabled = false;
-      modalSubmit.textContent = editingIndex === null ? 'Fetch & Save' : 'Update';
       return;
     }
 
@@ -190,22 +210,20 @@ async function handleModalSubmit() {
       skinUrl: profile.skinUrl,
       gameModes: tierData?.gameModes || {},
       overall: tierData?.overall || null,
-      addedDate: editingIndex === null
+      addedDate: currentEditingIndex === null
         ? new Date().toISOString().split('T')[0]
-        : accounts[editingIndex].addedDate,
+        : accounts[currentEditingIndex].addedDate,
     };
 
-    if (editingIndex === null) {
+    if (currentEditingIndex === null) {
       if (accounts.length >= MAX_SLOTS) {
         modalError.textContent = 'Vault is full (10/10).';
-        modalSubmit.disabled = false;
-        modalSubmit.textContent = 'Fetch & Save';
         return;
       }
       accounts.push(entry);
       showToast(`${profile.username} added to your vault.`);
     } else {
-      accounts[editingIndex] = entry;
+      accounts[currentEditingIndex] = entry;
       showToast(`${profile.username} updated.`);
     }
 
@@ -215,8 +233,9 @@ async function handleModalSubmit() {
   } catch (err) {
     modalError.textContent = err.message || 'Something went wrong.';
   } finally {
+    isSubmitting = false;
     modalSubmit.disabled = false;
-    modalSubmit.textContent = editingIndex === null ? 'Fetch & Save' : 'Update';
+    modalSubmit.textContent = currentEditingIndex === null ? 'Fetch & Save' : 'Update';
   }
 }
 
@@ -250,16 +269,34 @@ grid.addEventListener('click', async (e) => {
   }
 
   if (btn.dataset.action === 'refresh') {
-    showToast(`Refreshing tiers for ${acc.username}...`);
-    const tierData = await fetchTiers(acc.username);
-    if (tierData) {
-      accounts[index].gameModes = tierData.gameModes || {};
-      accounts[index].overall = tierData.overall || null;
-      saveAccounts(accounts);
+    btn.disabled = true;
+    btn.textContent = '...';
+    showToast(`Refreshing ${acc.username}...`);
+
+    try {
+      const [profile, tierData] = await Promise.all([
+        lookupUsername(acc.username).catch(() => null),
+        fetchTiers(acc.username),
+      ]);
+
+      const freshAccounts = loadAccounts();
+      if (!freshAccounts[index]) return;
+
+      if (profile) {
+        freshAccounts[index].uuid = profile.uuid;
+        freshAccounts[index].skinUrl = profile.skinUrl;
+        freshAccounts[index].username = profile.username;
+      }
+      if (tierData) {
+        freshAccounts[index].gameModes = tierData.gameModes || {};
+        freshAccounts[index].overall = tierData.overall || null;
+      }
+
+      saveAccounts(freshAccounts);
       render();
-      showToast(`Tiers updated for ${acc.username}.`);
-    } else {
-      showToast(`Could not refresh tiers for ${acc.username}.`);
+      showToast(`${freshAccounts[index].username} refreshed.`);
+    } catch {
+      showToast(`Could not refresh ${acc.username}.`);
     }
   }
 });
