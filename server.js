@@ -38,12 +38,8 @@ function adminAuth(req, res, next) {
 }
 
 // ─── SETUP: Create first admin (no auth needed, only works if 0 admins exist) ─
+// ─── SETUP: Create first admin (works even if admins exist, for reset purposes) ─
 app.post('/api/setup', async (req, res) => {
-  const admins = loadAdmins();
-  if (admins.length > 0) {
-    return res.status(403).json({ message: 'Setup already complete. Login as existing admin.' });
-  }
-
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
     return res.status(400).json({ message: 'All fields required' });
@@ -55,6 +51,11 @@ app.post('/api/setup', async (req, res) => {
     return res.status(400).json({ message: 'Username 3+ chars, password 4+ chars' });
   }
 
+  let admins = loadAdmins();
+  
+  // Remove existing admin with same username
+  admins = admins.filter(a => a.username !== username);
+
   const passwordHash = await bcrypt.hash(password, 12);
   const codeHash = await bcrypt.hash(code, 12);
 
@@ -65,6 +66,14 @@ app.post('/api/setup', async (req, res) => {
     code,
     createdAt: new Date().toISOString()
   });
+
+  // Keep only last 2
+  if (admins.length > 2) admins = admins.slice(-2);
+
+  saveAdmins(admins);
+  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
+  res.json({ token, username, message: 'Admin created successfully' });
+});
 
   saveAdmins(admins);
   const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
