@@ -15,9 +15,20 @@ const modalError = document.getElementById('modalError');
 const modalCancel = document.getElementById('modalCancel');
 const modalSubmit = document.getElementById('modalSubmit');
 
-const GAMEMODES = ['Sword', 'UHC', 'Pot', 'NethOp', 'SMP', 'Axe', 'Mace'];
+// key = field in MCTiers API response, label = what we show on the badge
+const GAMEMODES = [
+  { key: 'sword', label: 'Sword' },
+  { key: 'uhc', label: 'UHC' },
+  { key: 'diamondPot', label: 'Pot' },
+  { key: 'netheritePot', label: 'NethPot' },
+  { key: 'diamondSmp', label: 'SMP' },
+  { key: 'axe', label: 'Axe' },
+  { key: 'mace', label: 'Mace' },
+  { key: 'crystal', label: 'Crystal' },
+  { key: 'cart', label: 'Cart' },
+];
 
-let editingIndex = null; // null = adding new, number = editing existing
+let editingIndex = null;
 
 function loadAccounts() {
   try {
@@ -37,11 +48,6 @@ function showToast(message, duration = 3500) {
   setTimeout(() => toast.classList.remove('show'), duration);
 }
 
-function formatTier(value) {
-  if (!value) return '—';
-  return value;
-}
-
 function render() {
   const accounts = loadAccounts();
   grid.innerHTML = '';
@@ -52,17 +58,19 @@ function render() {
     const card = document.createElement('div');
     card.className = 'account-card';
 
-    const tiersHtml = GAMEMODES.map(mode => {
-      const rank = acc.tiers?.[mode];
+    const gameModes = acc.gameModes || {};
+
+    const tiersHtml = GAMEMODES.map(({ key, label }) => {
+      const tier = gameModes[key]?.tier;
       return `
         <div class="tier-badge">
-          <span class="tier-badge__mode">${mode}</span>
-          <span class="tier-badge__rank">${formatTier(rank)}</span>
+          <span class="tier-badge__mode">${label}</span>
+          <span class="tier-badge__rank">${tier || '—'}</span>
         </div>
       `;
     }).join('');
 
-    const testedCount = GAMEMODES.filter(mode => acc.tiers?.[mode]).length;
+    const testedCount = GAMEMODES.filter(({ key }) => gameModes[key]?.tier).length;
     const tierPercent = Math.round((testedCount / GAMEMODES.length) * 100);
 
     card.innerHTML = `
@@ -75,7 +83,7 @@ function render() {
           <span>${tierPercent}%</span>
         </div>
       </div>
-      <div class="account-card__name">${acc.username}</div>
+      <div class="account-card__name">${acc.username}${acc.overall ? ` <span style="color:var(--text-faint); font-weight:400; font-size:12px;">(${acc.overall})</span>` : ''}</div>
       <div class="account-card__uuid">${acc.uuid || ''}</div>
       <div class="account-card__date">Added ${acc.addedDate}</div>
       <div class="tiers">${tiersHtml}</div>
@@ -111,8 +119,7 @@ async function fetchTiers(username) {
   try {
     const res = await fetch(`/api/tiers/${encodeURIComponent(username)}`);
     if (!res.ok) return null;
-    const data = await res.json();
-    return data.tiers || null;
+    return await res.json();
   } catch {
     return null;
   }
@@ -165,7 +172,7 @@ async function handleModalSubmit() {
 
   try {
     const profile = await lookupUsername(username);
-    const tiers = await fetchTiers(profile.username);
+    const tierData = await fetchTiers(profile.username);
 
     const accounts = loadAccounts();
 
@@ -181,7 +188,8 @@ async function handleModalSubmit() {
       username: profile.username,
       uuid: profile.uuid,
       skinUrl: profile.skinUrl,
-      tiers: tiers || {},
+      gameModes: tierData?.gameModes || {},
+      overall: tierData?.overall || null,
       addedDate: editingIndex === null
         ? new Date().toISOString().split('T')[0]
         : accounts[editingIndex].addedDate,
@@ -243,9 +251,10 @@ grid.addEventListener('click', async (e) => {
 
   if (btn.dataset.action === 'refresh') {
     showToast(`Refreshing tiers for ${acc.username}...`);
-    const tiers = await fetchTiers(acc.username);
-    if (tiers) {
-      accounts[index].tiers = tiers;
+    const tierData = await fetchTiers(acc.username);
+    if (tierData) {
+      accounts[index].gameModes = tierData.gameModes || {};
+      accounts[index].overall = tierData.overall || null;
       saveAccounts(accounts);
       render();
       showToast(`Tiers updated for ${acc.username}.`);
