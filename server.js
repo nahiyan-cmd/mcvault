@@ -1,19 +1,14 @@
 require('dotenv').config();
 const express = require('express');
-const session = require('express-session');
-const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const BOT_SECRET = process.env.BOT_SECRET || 'mcvault_bot_secret';
-const JWT_SECRET = process.env.JWT_SECRET || 'mcvault_jwt_secret';
+const JWT_SECRET = process.env.JWT_SECRET || 'default_secret_change_me';
 
-// ─── Data file ────────────────────────────────────────────────────────────────
 const DATA_DIR = path.join(__dirname, 'data');
 const ADMINS_FILE = path.join(DATA_DIR, 'admins.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -28,37 +23,55 @@ function saveAdmins(admins) {
   fs.writeFileSync(ADMINS_FILE, JSON.stringify(admins, null, 2));
 }
 
-// ─── Middleware ───────────────────────────────────────────────────────────────
-app.use(cors());
 app.use(express.json());
-app.use(session({
-  secret: JWT_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }
-}));
 app.use(express.static(path.join(__dirname, 'public')));
-
-// ─── Auth middleware ──────────────────────────────────────────────────────────
-function botAuth(req, res, next) {
-  const secret = req.headers['x-bot-secret'];
-  if (secret !== BOT_SECRET) return res.status(403).json({ message: 'Invalid bot secret' });
-  next();
-}
 
 function adminAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ message: 'No token provided' });
+  if (!token) return res.status(401).json({ message: 'No token' });
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.admin = decoded;
+    req.admin = jwt.verify(token, JWT_SECRET);
     next();
   } catch {
     return res.status(401).json({ message: 'Invalid token' });
   }
 }
 
-// ─── Admin Auth API ───────────────────────────────────────────────────────────
+// ─── SETUP: Create first admin (no auth needed, only works if 0 admins exist) ─
+app.post('/api/setup', async (req, res) => {
+  const admins = loadAdmins();
+  if (admins.length > 0) {
+    return res.status(403).json({ message: 'Setup already complete. Login as existing admin.' });
+  }
+
+  const { username, password, code } = req.body;
+  if (!username || !password || !code) {
+    return res.status(400).json({ message: 'All fields required' });
+  }
+  if (!/^\d{6}$/.test(code)) {
+    return res.status(400).json({ message: 'Code must be 6 digits' });
+  }
+  if (username.length < 3 || password.length < 4) {
+    return res.status(400).json({ message: 'Username 3+ chars, password 4+ chars' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const codeHash = await bcrypt.hash(code, 12);
+
+  admins.push({
+    username,
+    passwordHash,
+    codeHash,
+    code,
+    createdAt: new Date().toISOString()
+  });
+
+  saveAdmins(admins);
+  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
+  res.json({ token, username, message: 'First admin created successfully' });
+});
+
+// ─── LOGIN ────────────────────────────────────────────────────────────────────
 app.post('/api/admin/login', async (req, res) => {
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
@@ -76,12 +89,12 @@ app.post('/api/admin/login', async (req, res) => {
     return res.status(401).json({ message: 'Invalid credentials' });
   }
 
-  const token = jwt.sign({ username: admin.username }, JWT_SECRET, { expiresIn: '24h' });
-  res.json({ token, username: admin.username });
+  const token = jwt.sign({ username: admin.username }, JWT_SECRET, { expiresIn: '7d' });
+  res.json({ token, username });
 });
 
-// ─── Bot Admin API ────────────────────────────────────────────────────────────
-app.get('/api/bot/admins', botAuth, (req, res) => {
+// ─── LIST ADMINS (admin only) ─────────────────────────────────────────────────
+app.get('/api/admins', adminAuth, (req, res) => {
   const admins = loadAdmins().map(a => ({
     username: a.username,
     code: a.code,
@@ -90,10 +103,11 @@ app.get('/api/bot/admins', botAuth, (req, res) => {
   res.json(admins);
 });
 
-app.post('/api/bot/admins', botAuth, async (req, res) => {
+// ─── CREATE ADMIN (admin only, max 2) ─────────────────────────────────────────
+app.post('/api/admins', adminAuth, async (req, res) => {
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
-    return res.status(400).json({ message: 'Username, password, and code required' });
+    return res.status(400).json({ message: 'All fields required' });
   }
   if (!/^\d{6}$/.test(code)) {
     return res.status(400).json({ message: 'Code must be 6 digits' });
@@ -101,7 +115,7 @@ app.post('/api/bot/admins', botAuth, async (req, res) => {
 
   let admins = loadAdmins();
   if (admins.length >= 2) {
-    return res.status(400).json({ error: 'max_reached', message: 'Max 2 admins allowed' });
+    return res.status(400).json({ message: 'Max 2 admins reached' });
   }
   if (admins.some(a => a.username === username)) {
     return res.status(400).json({ message: 'Admin already exists' });
@@ -122,16 +136,21 @@ app.post('/api/bot/admins', botAuth, async (req, res) => {
   res.status(201).json({ message: 'Admin created' });
 });
 
-app.delete('/api/bot/admins/:username', botAuth, (req, res) => {
+// ─── DELETE ADMIN (admin only) ────────────────────────────────────────────────
+app.delete('/api/admins/:username', adminAuth, (req, res) => {
   let admins = loadAdmins();
   const idx = admins.findIndex(a => a.username === req.params.username);
   if (idx === -1) return res.status(404).json({ message: 'Admin not found' });
+  if (admins.length === 1) {
+    return res.status(400).json({ message: 'Cannot delete the last admin' });
+  }
   admins.splice(idx, 1);
   saveAdmins(admins);
   res.json({ message: 'Admin deleted' });
 });
 
-app.patch('/api/bot/admins/:username', botAuth, async (req, res) => {
+// ─── EDIT ADMIN (admin only) ──────────────────────────────────────────────────
+app.patch('/api/admins/:username', adminAuth, async (req, res) => {
   const { password, code } = req.body;
   let admins = loadAdmins();
   const admin = admins.find(a => a.username === req.params.username);
@@ -148,10 +167,16 @@ app.patch('/api/bot/admins/:username', botAuth, async (req, res) => {
   res.json({ message: 'Admin updated' });
 });
 
-// ─── Minecraft API Proxies ────────────────────────────────────────────────────
+// ─── CHECK SETUP STATUS ───────────────────────────────────────────────────────
+app.get('/api/setup-status', (req, res) => {
+  const admins = loadAdmins();
+  res.json({ setupComplete: admins.length > 0, adminCount: admins.length });
+});
+
+// ─── MINECRAFT API PROXIES ────────────────────────────────────────────────────
 app.get('/api/lookup/:username', async (req, res) => {
   try {
-    const { data } = await axios.get(
+    const { data } = await require('axios').get(
       `https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(req.params.username)}`,
       { timeout: 5000 }
     );
@@ -165,7 +190,7 @@ app.get('/api/lookup/:username', async (req, res) => {
 
 app.get('/api/tiers/:username', async (req, res) => {
   try {
-    const { data } = await axios.get(
+    const { data } = await require('axios').get(
       `https://mctiers.com/api/rankings/${encodeURIComponent(req.params.username)}`,
       { timeout: 8000 }
     );
@@ -175,7 +200,9 @@ app.get('/api/tiers/:username', async (req, res) => {
   }
 });
 
-// ─── Start ────────────────────────────────────────────────────────────────────
+// ─── HEALTH ───────────────────────────────────────────────────────────────────
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
 app.listen(PORT, () => {
-  console.log(`MC Vault server running on http://localhost:${PORT}`);
+  console.log(`MC Vault running on port ${PORT}`);
 });
