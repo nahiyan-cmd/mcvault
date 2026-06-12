@@ -43,11 +43,20 @@ app.get('/api/tiers/:username', async (req, res) => {
     const uuid = mojangRes.data.id;
 
     const tiersRes = await axios.get(`https://mctiers.com/api/profile/${uuid}`);
+    const data = tiersRes.data;
 
-    res.json({ uuid, raw: tiersRes.data });
+    res.json({
+      uuid,
+      overall: data.tier || null,
+      gameModes: data.gameModes || {},
+    });
   } catch (err) {
+    if (err.response?.status === 404) {
+      // Player exists but has no MCTiers ranking yet
+      return res.json({ uuid: null, overall: null, gameModes: {} });
+    }
     console.error('Tier lookup failed:', err.response?.data || err.message);
-    res.status(err.response?.status || 500).json({
+    res.status(500).json({
       error: 'tier_lookup_failed',
       message: 'Could not fetch tier data for this player.',
     });
