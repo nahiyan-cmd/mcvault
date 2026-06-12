@@ -1,0 +1,17 @@
+{
+  "name": "mc-vault",
+  "version": "1.0.0",
+  "description": "MC Vault - Minecraft multi-account manager with Microsoft login",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5"
+  }
+}
