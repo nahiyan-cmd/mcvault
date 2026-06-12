@@ -8,7 +8,16 @@ const capacityPercent = document.getElementById('capacityPercent');
 const capacityFill = document.getElementById('capacityFill');
 const toast = document.getElementById('toast');
 
+const modalOverlay = document.getElementById('modalOverlay');
+const modalTitle = document.getElementById('modalTitle');
+const usernameInput = document.getElementById('usernameInput');
+const modalError = document.getElementById('modalError');
+const modalCancel = document.getElementById('modalCancel');
+const modalSubmit = document.getElementById('modalSubmit');
+
 const GAMEMODES = ['Sword', 'UHC', 'Pot', 'NethOp', 'SMP', 'Axe', 'Mace'];
+
+let editingIndex = null; // null = adding new, number = editing existing
 
 function loadAccounts() {
   try {
@@ -71,7 +80,8 @@ function render() {
       <div class="account-card__date">Added ${acc.addedDate}</div>
       <div class="tiers">${tiersHtml}</div>
       <div class="account-card__actions">
-        <button class="icon-btn" data-action="refresh" data-index="${index}">Refresh Tiers</button>
+        <button class="icon-btn" data-action="edit" data-index="${index}">Edit</button>
+        <button class="icon-btn" data-action="refresh" data-index="${index}">Refresh</button>
         <button class="icon-btn icon-btn--danger" data-action="delete" data-index="${index}">Remove</button>
       </div>
     `;
@@ -82,13 +92,12 @@ function render() {
   if (accounts.length < MAX_SLOTS) {
     const addCard = document.createElement('div');
     addCard.className = 'add-card';
-    addCard.id = 'addCard';
     addCard.innerHTML = `
       <div class="add-card__circle">+</div>
       <div class="add-card__title">Add account</div>
       <div class="add-card__sub">${MAX_SLOTS - accounts.length} slot${MAX_SLOTS - accounts.length === 1 ? '' : 's'} remaining</div>
     `;
-    addCard.addEventListener('click', handleAddAccount);
+    addCard.addEventListener('click', () => openModal(null));
     grid.appendChild(addCard);
   }
 
@@ -96,10 +105,6 @@ function render() {
   capacityCount.textContent = `${accounts.length}/${MAX_SLOTS} accounts`;
   capacityPercent.textContent = `${percent}% full`;
   capacityFill.style.width = `${percent}%`;
-}
-
-function handleAddAccount() {
-  window.location.href = '/api/auth/login';
 }
 
 async function fetchTiers(username) {
@@ -113,60 +118,108 @@ async function fetchTiers(username) {
   }
 }
 
-async function checkPendingLogin() {
-  const params = new URLSearchParams(window.location.search);
-
-  if (params.get('auth_error')) {
-    const reasons = {
-      no_minecraft_profile: "That Microsoft account doesn't own Minecraft, or has no profile set up.",
-      unauthorized: 'Login was not authorized. Please try again.',
-      missing_code: 'Login was cancelled.',
-    };
-    showToast(reasons[params.get('auth_error')] || 'Login failed. Please try again.');
-    history.replaceState({}, '', window.location.pathname);
-    return;
-  }
-
-  if (params.get('login') !== 'success') return;
-
-  history.replaceState({}, '', window.location.pathname);
-
-  const res = await fetch('/api/auth/pending');
+async function lookupUsername(username) {
+  const res = await fetch(`/api/lookup/${encodeURIComponent(username)}`);
   const data = await res.json();
-
-  if (!data.profile) {
-    showToast('Could not retrieve account info. Please try again.');
-    return;
+  if (!res.ok) {
+    throw new Error(data.message || 'Lookup failed.');
   }
-
-  const accounts = loadAccounts();
-
-  if (accounts.length >= MAX_SLOTS) {
-    showToast('Vault is full (10/10). Remove an account before adding another.');
-    return;
-  }
-
-  if (accounts.some(a => a.uuid === data.profile.uuid)) {
-    showToast(`${data.profile.username} is already in your vault.`);
-    return;
-  }
-
-  showToast(`Fetching tier data for ${data.profile.username}...`);
-
-  const tiers = await fetchTiers(data.profile.username);
-
-  accounts.push({
-    username: data.profile.username,
-    uuid: data.profile.uuid,
-    skinUrl: data.profile.skinUrl,
-    tiers: tiers || {},
-    addedDate: new Date().toISOString().split('T')[0],
-  });
-
-  saveAccounts(accounts);
-  render();
-  showToast(`${data.profile.username} added to your vault.`);
+  return data;
 }
+
+function openModal(index) {
+  editingIndex = index;
+  modalError.textContent = '';
+  usernameInput.value = '';
+
+  if (index === null) {
+    modalTitle.textContent = 'Add Account';
+    modalSubmit.textContent = 'Fetch & Save';
+  } else {
+    const accounts = loadAccounts();
+    modalTitle.textContent = 'Edit Account';
+    modalSubmit.textContent = 'Update';
+    usernameInput.value = accounts[index].username;
+  }
+
+  modalOverlay.classList.add('show');
+  usernameInput.focus();
+}
+
+function closeModal() {
+  modalOverlay.classList.remove('show');
+  editingIndex = null;
+}
+
+async function handleModalSubmit() {
+  const username = usernameInput.value.trim();
+
+  if (!username) {
+    modalError.textContent = 'Please enter a username.';
+    return;
+  }
+
+  modalError.textContent = '';
+  modalSubmit.disabled = true;
+  modalSubmit.textContent = 'Fetching...';
+
+  try {
+    const profile = await lookupUsername(username);
+    const tiers = await fetchTiers(profile.username);
+
+    const accounts = loadAccounts();
+
+    const duplicate = accounts.some((a, i) => a.uuid === profile.uuid && i !== editingIndex);
+    if (duplicate) {
+      modalError.textContent = `${profile.username} is already in your vault.`;
+      modalSubmit.disabled = false;
+      modalSubmit.textContent = editingIndex === null ? 'Fetch & Save' : 'Update';
+      return;
+    }
+
+    const entry = {
+      username: profile.username,
+      uuid: profile.uuid,
+      skinUrl: profile.skinUrl,
+      tiers: tiers || {},
+      addedDate: editingIndex === null
+        ? new Date().toISOString().split('T')[0]
+        : accounts[editingIndex].addedDate,
+    };
+
+    if (editingIndex === null) {
+      if (accounts.length >= MAX_SLOTS) {
+        modalError.textContent = 'Vault is full (10/10).';
+        modalSubmit.disabled = false;
+        modalSubmit.textContent = 'Fetch & Save';
+        return;
+      }
+      accounts.push(entry);
+      showToast(`${profile.username} added to your vault.`);
+    } else {
+      accounts[editingIndex] = entry;
+      showToast(`${profile.username} updated.`);
+    }
+
+    saveAccounts(accounts);
+    render();
+    closeModal();
+  } catch (err) {
+    modalError.textContent = err.message || 'Something went wrong.';
+  } finally {
+    modalSubmit.disabled = false;
+    modalSubmit.textContent = editingIndex === null ? 'Fetch & Save' : 'Update';
+  }
+}
+
+modalCancel.addEventListener('click', closeModal);
+modalSubmit.addEventListener('click', handleModalSubmit);
+usernameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') handleModalSubmit();
+});
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeModal();
+});
 
 grid.addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
@@ -184,6 +237,10 @@ grid.addEventListener('click', async (e) => {
     showToast(`${acc.username} removed from vault.`);
   }
 
+  if (btn.dataset.action === 'edit') {
+    openModal(index);
+  }
+
   if (btn.dataset.action === 'refresh') {
     showToast(`Refreshing tiers for ${acc.username}...`);
     const tiers = await fetchTiers(acc.username);
@@ -199,4 +256,3 @@ grid.addEventListener('click', async (e) => {
 });
 
 render();
-checkPendingLogin();
