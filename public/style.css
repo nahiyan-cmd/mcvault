@@ -110,57 +110,26 @@ body {
   padding: 18px; display: flex; flex-direction: column; gap: 12px;
 }
 
+/* 3D skin viewer area — no more static image, no percent circle */
 .account-card__skin {
-  position: relative;
   width: 100%;
-  height: 180px;
+  height: 200px;
   border-radius: 10px;
   background: var(--surface-2);
   border: 1px solid var(--border-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
+  cursor: grab;
 }
-.account-card__skin img {
-  max-height: 100%;
-  max-width: 100%;
-  object-fit: contain;
-  image-rendering: pixelated;
-}
+.account-card__skin:active { cursor: grabbing; }
 
-.tier-meter {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: conic-gradient(var(--accent) calc(var(--pct) * 1%), var(--surface-2) 0deg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-}
-
-.tier-meter::after {
-  content: '';
-  position: absolute;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--surface);
-}
-
-.tier-meter span {
-  position: relative;
-  z-index: 1;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text);
+.skin-canvas {
+  width: 100% !important;
+  height: 200px !important;
+  display: block;
 }
 
 .account-card__name { font-weight: 700; font-size: 16px; }
+.account-card__overall { color: var(--text-faint); font-weight: 400; font-size: 12px; }
 .account-card__uuid { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint); word-break: break-all; }
 .account-card__date { font-size: 12px; color: var(--text-muted); }
 
@@ -171,6 +140,8 @@ body {
 }
 .tier-badge__mode { color: var(--text-faint); }
 .tier-badge__rank { color: var(--text); font-weight: 600; }
+.tier-badge--ranked { border-color: #3a3a3a; background: #222; }
+.tier-badge--ranked .tier-badge__rank { color: #e8e8e8; }
 
 .account-card__actions {
   display: flex; gap: 8px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border-soft);
@@ -182,6 +153,7 @@ body {
 }
 .icon-btn:hover { color: var(--text); border-color: #3a3a3a; }
 .icon-btn--danger:hover { color: #d98c8c; border-color: #4a2a2a; }
+.icon-btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
 .footer { text-align: center; padding: 22px 0; border-top: 1px solid var(--border-soft); color: var(--text-muted); font-size: 13px; }
 
@@ -197,13 +169,16 @@ body {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.6);
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   z-index: 200;
   padding: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
-.modal-overlay.show { display: flex; }
+.modal-overlay.show { opacity: 1; pointer-events: auto; }
 
 .modal {
   background: var(--surface);
@@ -212,7 +187,11 @@ body {
   padding: 24px;
   width: 100%;
   max-width: 380px;
+  transform: translateY(8px);
+  transition: transform 0.2s ease;
 }
+.modal-overlay.show .modal { transform: translateY(0); }
+
 .modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
 .modal__subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
 
@@ -229,23 +208,12 @@ body {
 }
 .modal__input:focus { outline: none; border-color: #444; }
 
-.modal__error {
-  color: #d98c8c;
-  font-size: 12px;
-  min-height: 16px;
-  margin-bottom: 8px;
-}
+.modal__error { color: #d98c8c; font-size: 12px; min-height: 16px; margin-bottom: 8px; }
 
 .modal__actions { display: flex; gap: 8px; margin-top: 8px; }
 .modal__btn {
-  flex: 1;
-  padding: 10px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  border: 1px solid var(--border);
+  flex: 1; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  font-family: inherit; cursor: pointer; border: 1px solid var(--border);
 }
 .modal__btn--secondary { background: var(--surface-2); color: var(--text-muted); }
 .modal__btn--secondary:hover { color: var(--text); }
