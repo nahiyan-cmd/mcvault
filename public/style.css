@@ -47,10 +47,39 @@ body {
 .brand__name { font-weight: 700; font-size: 16px; }
 .brand__sub { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
 
-.capacity { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
-.capacity__label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
-.capacity__track { width: 100%; height: 6px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
-.capacity__fill { height: 100%; width: 0%; background: linear-gradient(90deg, #6a6a6a, var(--accent)); border-radius: 999px; transition: width 0.35s ease; }
+.capacity {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 260px;
+}
+
+.capacity__label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+}
+
+.capacity__track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.capacity__fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #666666, var(--accent));
+  border-radius: 999px;
+  transition: width 0.35s ease;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
+}
 
 .content { flex: 1; padding: 40px 32px; max-width: 1200px; margin: 0 auto; width: 100%; }
 .intro h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
@@ -86,10 +115,43 @@ body {
 }
 
 .account-card__skin {
+  position: relative;
   width: 100%; height: 150px; border-radius: 10px; background: var(--surface-2);
   border: 1px solid var(--border-soft); display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .account-card__skin img { height: 140px; image-rendering: pixelated; }
+
+.tier-meter {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) calc(var(--pct) * 1%), var(--surface-2) 0deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+}
+
+.tier-meter::after {
+  content: '';
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.tier-meter span {
+  position: relative;
+  z-index: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+}
 
 .account-card__name { font-weight: 700; font-size: 16px; }
 .account-card__uuid { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint); word-break: break-all; }
