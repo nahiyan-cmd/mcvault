@@ -609,3 +609,70 @@ body {
   .grid { grid-template-columns: 1fr; }
   .content { padding: 16px; }
 }
+/* Admin modal specific styles */
+#adminModalOverlay .modal {
+  max-width: 480px;
+}
+
+#showCreateForm {
+  width: 100%;
+  margin-top: 8px;
+}
+
+#adminList {
+  margin-bottom: 16px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.admin-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.admin-item__info {
+  font-size: 13px;
+}
+
+.admin-item__code {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.admin-item__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-item__btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.admin-item__btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Skin image fix */
+.account-card__skin img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  min-height: 120px;
+}
