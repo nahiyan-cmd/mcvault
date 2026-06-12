@@ -15,7 +15,6 @@ const modalError = document.getElementById('modalError');
 const modalCancel = document.getElementById('modalCancel');
 const modalSubmit = document.getElementById('modalSubmit');
 
-// Real MCTiers API ranking keys + display labels
 const GAMEMODES = [
   { key: 'sword',     label: 'Sword'   },
   { key: 'uhc',       label: 'UHC'     },
@@ -28,16 +27,16 @@ const GAMEMODES = [
   { key: 'cart',      label: 'Cart'    },
 ];
 
-// Convert MCTiers numeric tier + pos into display string e.g. "HT3", "LT5"
 function formatTier(ranking) {
   if (!ranking) return null;
-  if (ranking.retired) return null; // treat retired as unranked
+  if (ranking.retired) return null;
   const ht = ranking.pos === 0 ? 'HT' : 'LT';
   return `${ht}${ranking.tier}`;
 }
 
 let editingIndex = null;
 let isSubmitting = false;
+let skinViewers = [];
 
 function loadAccounts() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
@@ -57,6 +56,9 @@ function showToast(message, duration = 3500) {
 }
 
 function render() {
+  skinViewers.forEach(v => { try { v.dispose(); } catch {} });
+  skinViewers = [];
+
   const accounts = loadAccounts();
   grid.innerHTML = '';
   introBlock.style.display = accounts.length === 0 ? 'block' : 'none';
@@ -78,14 +80,13 @@ function render() {
       `;
     }).join('');
 
-    // Best tier for display next to name — find highest (lowest tier number + HT preferred)
     const allTiers = GAMEMODES.map(({ key }) => rankings[key]).filter(Boolean).filter(r => !r.retired);
     const bestTier = allTiers.sort((a, b) => a.tier !== b.tier ? a.tier - b.tier : a.pos - b.pos)[0];
     const bestTierStr = bestTier ? formatTier(bestTier) : null;
 
     card.innerHTML = `
       <div class="account-card__skin">
-        <img src="${acc.skinUrl || ''}" alt="${acc.username}" onerror="this.style.display='none'" />
+        <canvas id="skin-canvas-${index}" width="200" height="200"></canvas>
       </div>
       <div class="account-card__name">
         ${acc.username}
@@ -121,6 +122,25 @@ function render() {
   capacityCount.textContent = `${accounts.length}/${MAX_SLOTS} accounts`;
   capacityPercent.textContent = `${percent}% full`;
   capacityFill.style.width = `${percent}%`;
+
+  accounts.forEach((acc, index) => {
+    if (!acc.skinUrl) return;
+    const canvas = document.getElementById(`skin-canvas-${index}`);
+    if (!canvas) return;
+    try {
+      const viewer = new skinview3d.SkinViewer({
+        canvas,
+        width: 200,
+        height: 200,
+        skin: acc.skinUrl,
+      });
+      viewer.controls.enableZoom = false;
+      viewer.autoRotate = true;
+      skinViewers.push(viewer);
+    } catch (e) {
+      console.error('skin viewer failed', e);
+    }
+  });
 }
 
 async function fetchTiers(username) {
