@@ -66,12 +66,14 @@ function render() {
     const rankings = acc.rankings || {};
 
     const tiersHtml = GAMEMODES.map(({ key, label }) => {
-      const tierStr = formatTier(rankings[key]);
-      const ranked = !!tierStr;
+      const ranking = rankings[key];
+      const tierStr = formatTier(ranking);
+      if (!tierStr) return '';
+      const tierNum = ranking.tier;
       return `
-        <div class="tier-badge${ranked ? ' tier-badge--ranked' : ''}">
+        <div class="tier-badge tier-badge--ranked tier-${tierNum}">
           <span class="tier-badge__mode">${label}</span>
-          <span class="tier-badge__rank">${tierStr || 'N/A'}</span>
+          <span class="tier-badge__rank">${tierStr}</span>
         </div>
       `;
     }).join('');
@@ -91,7 +93,7 @@ function render() {
       </div>
       <div class="account-card__uuid">${acc.uuid || ''}</div>
       <div class="account-card__date">Added ${acc.addedDate}</div>
-      <div class="tiers">${tiersHtml}</div>
+      <div class="tiers">${tiersHtml || '<span class="tiers__empty">None gamemode tested</span>'}</div>
       <div class="account-card__actions">
         <button class="icon-btn" data-action="edit" data-index="${index}">Edit</button>
         <button class="icon-btn" data-action="refresh" data-index="${index}">Refresh</button>
