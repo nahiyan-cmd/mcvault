@@ -22,7 +22,7 @@ app.get('/api/lookup/:username', async (req, res) => {
     );
     const uuid = mojangRes.data.id;
     const correctUsername = mojangRes.data.name;
-    const skinUrl = `https://crafatar.com/skins/${uuid}`;
+    const skinUrl = `https://crafatar.com/renders/body/${uuid}?overlay`;
     res.json({ username: correctUsername, uuid, skinUrl });
   } catch (err) {
     if (err.response?.status === 404) {
@@ -44,29 +44,29 @@ app.get('/api/tiers/:username', async (req, res) => {
     );
     const uuid = mojangRes.data.id;
 
-    // Mojang gives UUID without dashes e.g. "069a79f444e94726a5befca90e38aaf5"
-    // MCTiers requires dashes e.g. "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+    // MCTiers needs dashes: 8-4-4-4-12
     const uuidDashed = `${uuid.slice(0,8)}-${uuid.slice(8,12)}-${uuid.slice(12,16)}-${uuid.slice(16,20)}-${uuid.slice(20)}`;
-    
-    console.log(`Fetching tiers for ${username} | UUID: ${uuidDashed}`);
-    
+    console.log(`[tiers] ${username} => ${uuidDashed}`);
+
     const tiersRes = await axios.get(`https://mctiers.com/api/profile/${uuidDashed}`);
     const data = tiersRes.data;
+    console.log(`[tiers] raw response for ${username}:`, JSON.stringify(data));
 
-    console.log(`Tiers response for ${username}:`, JSON.stringify(data));
-
+    // Real API shape: { rankings: { pot: { tier: 4, pos: 1, peak_tier, peak_pos, retired }, ... }, overall: 63932 }
+    // pos=0 => HT (High Tier), pos=1 => LT (Low Tier)
+    // overall is a leaderboard rank number, not a tier string
     res.json({
       uuid,
-      overall: data.tier || null,
-      gameModes: data.gameModes || {},
+      rankings: data.rankings || {},
+      leaderboardPos: data.overall || null,
+      region: data.region || null,
     });
   } catch (err) {
     if (err.response?.status === 404) {
-      // Player exists on Mojang but has no MCTiers ranking
-      console.log(`No MCTiers ranking for ${username} (404)`);
-      return res.json({ uuid: null, overall: null, gameModes: {}, unranked: true });
+      console.log(`[tiers] ${username} not ranked on MCTiers`);
+      return res.json({ uuid: null, rankings: {}, leaderboardPos: null, region: null });
     }
-    console.error('Tier lookup failed:', err.response?.status, err.response?.data || err.message);
+    console.error('[tiers] failed:', err.response?.status, err.response?.data || err.message);
     res.status(500).json({ error: 'tier_lookup_failed', message: 'Could not fetch tier data.' });
   }
 });
