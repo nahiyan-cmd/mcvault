@@ -243,15 +243,38 @@ app.delete('/api/accounts', adminAuth, (req, res) => {
 // ─── MINECRAFT APIs ─────────────────────────────────────────────────────────────
 app.get('/api/lookup/:username', async (req, res) => {
   try {
-    const { data } = await require('axios').get(
-      `https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(req.params.username)}`,
-      { timeout: 5000 }
-    );
-    const uuid = data.id;
+    const axios = require('axios');
+    const username = encodeURIComponent(req.params.username);
+    
+    // Try multiple APIs in order
+    let uuid, name;
+    
+    // API 1: Ashcon (most reliable)
+    try {
+      const { data } = await axios.get(`https://api.ashcon.app/mojang/v2/user/${username}`, { timeout: 5000 });
+      uuid = data.uuid.replace(/-/g, '');
+      name = data.username;
+    } catch {
+      // API 2: Geyser
+      try {
+        const { data } = await axios.get(`https://api.geysermc.org/v2/xbox/xuid?gamertag=${username}`, { timeout: 5000 });
+        const xuid = data.xuid;
+        const { data: profileData } = await axios.get(`https://api.geysermc.org/v2/xbox/profile?xuid=${xuid}`, { timeout: 5000 });
+        uuid = profileData.id;
+        name = profileData.name;
+      } catch {
+        // API 3: Direct Mojang (fallback)
+        const { data } = await axios.get(`https://api.mojang.com/users/profiles/minecraft/${username}`, { timeout: 5000 });
+        uuid = data.id;
+        name = data.name;
+      }
+    }
+
     const skinUrl = `https://crafatar.com/renders/body/${uuid}?overlay=true&scale=4&default=MHF_Steve`;
-    res.json({ username: data.name, uuid, skinUrl });
+    res.json({ username: name, uuid, skinUrl });
   } catch (err) {
-    res.status(404).json({ message: 'Player not found' });
+    console.error('Lookup error:', err.message);
+    res.status(404).json({ message: 'Player not found. Try a different username or check spelling.' });
   }
 });
 
