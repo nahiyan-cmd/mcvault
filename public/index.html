@@ -47,6 +47,22 @@
   <span>Created by The Lord NotzKing — exclusively for his special friends</span>
 </footer>
 
+<!-- Add/Edit Account Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalTitle">Add Account</h2>
+    <p class="modal__subtitle">Enter a Minecraft username — skin, UUID, and tier data will be fetched automatically.</p>
+
+    <input type="text" id="usernameInput" class="modal__input" placeholder="e.g. Notch" autocomplete="off" />
+    <div class="modal__error" id="modalError"></div>
+
+    <div class="modal__actions">
+      <button class="modal__btn modal__btn--secondary" id="modalCancel">Cancel</button>
+      <button class="modal__btn modal__btn--primary" id="modalSubmit">Fetch & Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="script.js"></script>
