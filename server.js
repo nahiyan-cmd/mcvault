@@ -37,8 +37,7 @@ function adminAuth(req, res, next) {
   }
 }
 
-// ─── SETUP: Create first admin (no auth needed, only works if 0 admins exist) ─
-// ─── SETUP: Create first admin (works even if admins exist, for reset purposes) ─
+// ─── SETUP: Create admin ──────────────────────────────────────────────────────
 app.post('/api/setup', async (req, res) => {
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
@@ -52,8 +51,6 @@ app.post('/api/setup', async (req, res) => {
   }
 
   let admins = loadAdmins();
-  
-  // Remove existing admin with same username
   admins = admins.filter(a => a.username !== username);
 
   const passwordHash = await bcrypt.hash(password, 12);
@@ -67,17 +64,11 @@ app.post('/api/setup', async (req, res) => {
     createdAt: new Date().toISOString()
   });
 
-  // Keep only last 2
   if (admins.length > 2) admins = admins.slice(-2);
-
   saveAdmins(admins);
-  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ token, username, message: 'Admin created successfully' });
-});
 
-  saveAdmins(admins);
   const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ token, username, message: 'First admin created successfully' });
+  res.json({ token, username, message: 'Admin created' });
 });
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
@@ -102,7 +93,7 @@ app.post('/api/admin/login', async (req, res) => {
   res.json({ token, username });
 });
 
-// ─── LIST ADMINS (admin only) ─────────────────────────────────────────────────
+// ─── LIST ADMINS ──────────────────────────────────────────────────────────────
 app.get('/api/admins', adminAuth, (req, res) => {
   const admins = loadAdmins().map(a => ({
     username: a.username,
@@ -112,7 +103,7 @@ app.get('/api/admins', adminAuth, (req, res) => {
   res.json(admins);
 });
 
-// ─── CREATE ADMIN (admin only, max 2) ─────────────────────────────────────────
+// ─── CREATE ADMIN ─────────────────────────────────────────────────────────────
 app.post('/api/admins', adminAuth, async (req, res) => {
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
@@ -145,7 +136,7 @@ app.post('/api/admins', adminAuth, async (req, res) => {
   res.status(201).json({ message: 'Admin created' });
 });
 
-// ─── DELETE ADMIN (admin only) ────────────────────────────────────────────────
+// ─── DELETE ADMIN ───────────────────────────────────────────────────────────────
 app.delete('/api/admins/:username', adminAuth, (req, res) => {
   let admins = loadAdmins();
   const idx = admins.findIndex(a => a.username === req.params.username);
@@ -158,7 +149,7 @@ app.delete('/api/admins/:username', adminAuth, (req, res) => {
   res.json({ message: 'Admin deleted' });
 });
 
-// ─── EDIT ADMIN (admin only) ──────────────────────────────────────────────────
+// ─── EDIT ADMIN ─────────────────────────────────────────────────────────────────
 app.patch('/api/admins/:username', adminAuth, async (req, res) => {
   const { password, code } = req.body;
   let admins = loadAdmins();
@@ -176,10 +167,16 @@ app.patch('/api/admins/:username', adminAuth, async (req, res) => {
   res.json({ message: 'Admin updated' });
 });
 
-// ─── CHECK SETUP STATUS ───────────────────────────────────────────────────────
+// ─── CHECK SETUP STATUS ─────────────────────────────────────────────────────────
 app.get('/api/setup-status', (req, res) => {
   const admins = loadAdmins();
   res.json({ setupComplete: admins.length > 0, adminCount: admins.length });
+});
+
+// ─── RESET ALL ADMINS (temporary, remove after use) ───────────────────────────
+app.get('/api/reset-admins', (req, res) => {
+  saveAdmins([]);
+  res.json({ message: 'All admins cleared' });
 });
 
 // ─── MINECRAFT API PROXIES ────────────────────────────────────────────────────
