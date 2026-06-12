@@ -1,441 +1,611 @@
-const MAX_SLOTS = 10;
-const STORAGE_KEY = 'mcvault_accounts';
-
-const grid = document.getElementById('accountGrid');
-const introBlock = document.getElementById('introBlock');
-const capacityCount = document.getElementById('capacityCount');
-const capacityPercent = document.getElementById('capacityPercent');
-const capacityFill = document.getElementById('capacityFill');
-const toast = document.getElementById('toast');
-const adminBadge = document.getElementById('adminBadge');
-const adminBadgeName = document.getElementById('adminBadgeName');
-const logoutBtn = document.getElementById('logoutBtn');
-const adminFooterLink = document.getElementById('adminFooterLink');
-
-const modalOverlay = document.getElementById('modalOverlay');
-const modalTitle = document.getElementById('modalTitle');
-const usernameInput = document.getElementById('usernameInput');
-const modalError = document.getElementById('modalError');
-const modalCancel = document.getElementById('modalCancel');
-const modalSubmit = document.getElementById('modalSubmit');
-
-const adminModalOverlay = document.getElementById('adminModalOverlay');
-const adminList = document.getElementById('adminList');
-const createAdminForm = document.getElementById('createAdminForm');
-const showCreateForm = document.getElementById('showCreateForm');
-const cancelCreateAdmin = document.getElementById('cancelCreateAdmin');
-const submitCreateAdmin = document.getElementById('submitCreateAdmin');
-const closeAdminModal = document.getElementById('closeAdminModal');
-const adminModalError = document.getElementById('adminModalError');
-
-const GAMEMODES = [
-  { key: 'sword',     label: 'Sword'   },
-  { key: 'uhc',       label: 'UHC'     },
-  { key: 'pot',       label: 'DiaPot'  },
-  { key: 'netherPot', label: 'NethPot' },
-  { key: 'smp',       label: 'SMP'     },
-  { key: 'axe',       label: 'Axe'     },
-  { key: 'mace',      label: 'Mace'    },
-  { key: 'vanilla',   label: 'Crystal' },
-  { key: 'cart',      label: 'Cart'    },
-];
-
-function formatTier(ranking) {
-  if (!ranking) return null;
-  if (ranking.retired) return null;
-  const ht = ranking.pos === 0 ? 'HT' : 'LT';
-  return `${ht}${ranking.tier}`;
+:root {
+  --bg: #0c0c0c;
+  --surface: #141414;
+  --surface-2: #1a1a1a;
+  --border: #2a2a2a;
+  --text: #e8e8e8;
+  --text-muted: #888;
+  --text-faint: #555;
+  --accent: #c8ff00;
+  --accent-dim: #9ec400;
+  --danger: #ff4444;
+  --radius: 12px;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
-let editingIndex = null;
-let isSubmitting = false;
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
-function loadAccounts() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-  catch { return []; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
-function saveAccounts(accounts) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
-let toastTimer = null;
-function showToast(message, duration = 3500) {
-  if (toastTimer) clearTimeout(toastTimer);
-  toast.textContent = message;
-  toast.classList.add('show');
-  toastTimer = setTimeout(() => { toast.classList.remove('show'); toastTimer = null; }, duration);
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-function isAdmin() {
-  return !!localStorage.getItem('mcvault_token');
+.brand__mark {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--accent);
 }
 
-function getAuthHeaders() {
-  const token = localStorage.getItem('mcvault_token');
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
+.brand__text { display: flex; flex-direction: column; }
+.brand__name { font-weight: 700; font-size: 15px; }
+.brand__sub { font-size: 11px; color: var(--text-faint); }
+
+.topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
 }
 
-function updateAdminUI() {
-  const token = localStorage.getItem('mcvault_token');
-  const name = localStorage.getItem('mcvault_admin_name');
-  if (token && name) {
-    adminBadge.style.display = 'flex';
-    adminBadgeName.textContent = name;
-    adminFooterLink.style.display = 'none';
-  } else {
-    adminBadge.style.display = 'none';
-    adminFooterLink.style.display = 'inline';
-  }
+.capacity { min-width: 140px; }
+.capacity__label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.capacity__track {
+  height: 4px;
+  background: var(--surface-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.capacity__fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  width: 0%;
 }
 
-function render() {
-  const accounts = loadAccounts();
-  grid.innerHTML = '';
-  introBlock.style.display = accounts.length === 0 ? 'block' : 'none';
-
-  accounts.forEach((acc, index) => {
-    const card = document.createElement('div');
-    card.className = 'account-card';
-
-    const rankings = acc.rankings || {};
-
-    const tiersHtml = GAMEMODES.map(({ key, label }) => {
-      const ranking = rankings[key];
-      const tierStr = formatTier(ranking);
-      if (!tierStr) return '';
-      const tierNum = ranking.tier;
-      return `
-        <div class="tier-badge tier-badge--ranked tier-${tierNum}">
-          <span class="tier-badge__mode">${label}</span>
-          <span class="tier-badge__rank">${tierStr}</span>
-        </div>
-      `;
-    }).join('');
-
-    const allTiers = GAMEMODES.map(({ key }) => rankings[key]).filter(Boolean).filter(r => !r.retired);
-    const bestTier = allTiers.sort((a, b) => {
-      const ta = Number(a.tier), tb = Number(b.tier);
-      if (ta !== tb) return ta - tb;
-      return Number(a.pos) - Number(b.pos);
-    })[0];
-    const bestTierStr = bestTier ? formatTier(bestTier) : null;
-    const isGM = allTiers.some(r => Number(r.tier) === 1 && Number(r.pos) === 0);
-
-    card.innerHTML = `
-      <div class="account-card__skin">
-        <img src="${acc.skinUrl || ''}" alt="${acc.username}" onerror="this.style.display='none'" />
-      </div>
-      <div class="account-card__name">
-        ${acc.username}
-        ${isGM ? `<span class="account-card__gm">GM</span>` : ''}
-        ${bestTierStr ? `<span class="account-card__overall">${bestTierStr}</span>` : ''}
-        ${acc.region ? `<span class="account-card__region">${acc.region}</span>` : ''}
-      </div>
-      <div class="account-card__uuid">${acc.uuid || ''}</div>
-      <div class="account-card__date">Added ${acc.addedDate}</div>
-      <div class="section-label">MCTiers</div>
-      <div class="tiers">${tiersHtml || '<span class="tiers__empty">No gamemode tested</span>'}</div>
-      <div class="rainbow-divider"></div>
-      <div class="section-label">PvPTiers</div>
-      <div class="pvptiers-status">Under Maintenance</div>
-      ${isAdmin() ? `
-      <div class="account-card__actions">
-        <button class="icon-btn" data-action="edit" data-index="${index}">Edit</button>
-        <button class="icon-btn" data-action="refresh" data-index="${index}">Refresh</button>
-        <button class="icon-btn icon-btn--danger" data-action="delete" data-index="${index}">Remove</button>
-      </div>` : ''}
-    `;
-    grid.appendChild(card);
-  });
-
-  if (accounts.length < MAX_SLOTS && isAdmin()) {
-    const addCard = document.createElement('div');
-    addCard.className = 'add-card';
-    const remaining = MAX_SLOTS - accounts.length;
-    addCard.innerHTML = `
-      <div class="add-card__circle">+</div>
-      <div class="add-card__title">Add account</div>
-      <div class="add-card__sub">${remaining} slot${remaining === 1 ? '' : 's'} remaining</div>
-    `;
-    addCard.addEventListener('click', () => openModal(null));
-    grid.appendChild(addCard);
-  }
-
-  const percent = Math.round((accounts.length / MAX_SLOTS) * 100);
-  capacityCount.textContent = `${accounts.length}/${MAX_SLOTS} accounts`;
-  capacityPercent.textContent = `${percent}% full`;
-  capacityFill.style.width = `${percent}%`;
+.admin-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 12px 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-async function fetchTiers(username) {
-  try {
-    const res = await fetch(`/api/tiers/${encodeURIComponent(username)}`);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch { return null; }
+.admin-badge__dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
-async function lookupUsername(username) {
-  const res = await fetch(`/api/lookup/${encodeURIComponent(username)}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || 'Lookup failed.');
-  return data;
+.admin-badge__logout {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: 4px;
+  font-family: inherit;
+}
+.admin-badge__logout:hover { color: var(--danger); }
+
+.content {
+  flex: 1;
+  padding: 24px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
 }
 
-function openModal(index) {
-  if (!isAdmin()) return;
-  editingIndex = index;
-  isSubmitting = false;
-  modalError.textContent = '';
-  usernameInput.value = '';
-  modalSubmit.disabled = false;
-  if (index === null) {
-    modalTitle.textContent = 'Add Account';
-    modalSubmit.textContent = 'Fetch & Save';
-  } else {
-    const accounts = loadAccounts();
-    modalTitle.textContent = 'Edit Account';
-    modalSubmit.textContent = 'Update';
-    usernameInput.value = accounts[index].username;
-  }
-  modalOverlay.classList.add('show');
-  setTimeout(() => usernameInput.focus(), 50);
+.intro {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--text-muted);
+}
+.intro h1 {
+  font-size: 28px;
+  color: var(--text);
+  margin-bottom: 8px;
 }
 
-function closeModal() {
-  modalOverlay.classList.remove('show');
-  editingIndex = null;
-  isSubmitting = false;
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 
-async function handleModalSubmit() {
-  if (isSubmitting || !isAdmin()) return;
-  const username = usernameInput.value.trim();
-  if (!username) { modalError.textContent = 'Please enter a username.'; return; }
-  if (!/^[a-zA-Z0-9_]{3,16}$/.test(username)) {
-    modalError.textContent = 'Usernames must be 3-16 characters (letters, numbers, underscores).';
-    return;
-  }
+.account-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: border-color 0.15s;
+}
+.account-card:hover { border-color: #333; }
 
-  modalError.textContent = '';
-  isSubmitting = true;
-  modalSubmit.disabled = true;
-  modalSubmit.textContent = 'Fetching...';
-  const currentEditingIndex = editingIndex;
-
-  try {
-    const profile = await lookupUsername(username);
-    const tierData = await fetchTiers(profile.username);
-
-    const accounts = loadAccounts();
-    const normalizedUUID = profile.uuid.toLowerCase();
-    const duplicate = accounts.some((a, i) => a.uuid.toLowerCase() === normalizedUUID && i !== currentEditingIndex);
-    if (duplicate) { modalError.textContent = `${profile.username} is already in your vault.`; return; }
-
-    const entry = {
-      username: profile.username,
-      uuid: profile.uuid,
-      skinUrl: profile.skinUrl,
-      rankings: tierData?.rankings || {},
-      leaderboardPos: tierData?.leaderboardPos || null,
-      region: tierData?.region || null,
-      addedDate: currentEditingIndex === null
-        ? new Date().toISOString().split('T')[0]
-        : accounts[currentEditingIndex].addedDate,
-    };
-
-    if (currentEditingIndex === null) {
-      if (accounts.length >= MAX_SLOTS) { modalError.textContent = 'Vault is full (10/10).'; return; }
-      accounts.push(entry);
-      showToast(`${profile.username} added to your vault.`);
-    } else {
-      accounts[currentEditingIndex] = entry;
-      showToast(`${profile.username} updated.`);
-    }
-
-    saveAccounts(accounts);
-    render();
-    closeModal();
-  } catch (err) {
-    modalError.textContent = err.message || 'Something went wrong.';
-  } finally {
-    isSubmitting = false;
-    modalSubmit.disabled = false;
-    modalSubmit.textContent = currentEditingIndex === null ? 'Fetch & Save' : 'Update';
-  }
+.account-card__skin {
+  width: 100%;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.account-card__skin img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
-modalCancel.addEventListener('click', closeModal);
-modalSubmit.addEventListener('click', handleModalSubmit);
-usernameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleModalSubmit(); });
-modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
-
-grid.addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action]');
-  if (!btn) return;
-  const index = Number(btn.dataset.index);
-  const accounts = loadAccounts();
-  const acc = accounts[index];
-  if (!acc) return;
-
-  if (btn.dataset.action === 'delete') {
-    accounts.splice(index, 1);
-    saveAccounts(accounts);
-    render();
-    showToast(`${acc.username} removed from vault.`);
-  }
-
-  if (btn.dataset.action === 'edit') openModal(index);
-
-  if (btn.dataset.action === 'refresh') {
-    btn.disabled = true;
-    btn.textContent = '...';
-    showToast(`Refreshing ${acc.username}...`);
-    try {
-      const [profile, tierData] = await Promise.all([
-        lookupUsername(acc.username).catch(() => null),
-        fetchTiers(acc.username),
-      ]);
-      const fresh = loadAccounts();
-      if (!fresh[index]) return;
-      if (profile) {
-        fresh[index].uuid = profile.uuid;
-        fresh[index].skinUrl = profile.skinUrl;
-        fresh[index].username = profile.username;
-      }
-      if (tierData) {
-        fresh[index].rankings = tierData.rankings || {};
-        fresh[index].leaderboardPos = tierData.leaderboardPos || null;
-        fresh[index].region = tierData.region || null;
-      }
-      saveAccounts(fresh);
-      render();
-      showToast(`${fresh[index].username} refreshed.`);
-    } catch {
-      showToast(`Could not refresh ${acc.username}.`);
-    }
-  }
-});
-
-// ─── Admin Management ───────────────────────────────────────────────────────────
-
-function openAdminModal() {
-  if (!isAdmin()) {
-    window.location.href = '/admin-login.html';
-    return;
-  }
-  adminModalOverlay.classList.add('show');
-  loadAdminList();
+.account-card__name {
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
 }
 
-async function loadAdminList() {
-  try {
-    const res = await fetch('/api/admins', { headers: getAuthHeaders() });
-    if (!res.ok) throw new Error('Failed to load admins');
-    const admins = await res.json();
-    
-    adminList.innerHTML = admins.map(a => `
-      <div class="admin-item">
-        <div class="admin-item__info">
-          <strong>${a.username}</strong>
-          <div class="admin-item__code">Code: ${a.code}</div>
-        </div>
-        ${admins.length > 1 ? `
-        <div class="admin-item__actions">
-          <button class="admin-item__btn" onclick="deleteAdmin('${a.username}')">Delete</button>
-        </div>` : ''}
-      </div>
-    `).join('');
-    
-    showCreateForm.style.display = admins.length >= 2 ? 'none' : 'block';
-  } catch (err) {
-    adminList.innerHTML = `<div class="modal__error">${err.message}</div>`;
-  }
+.account-card__gm {
+  background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+  background-size: 200% auto;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  animation: rainbow 3s linear infinite;
 }
 
-async function deleteAdmin(username) {
-  if (!confirm(`Delete admin ${username}?`)) return;
-  try {
-    const res = await fetch(`/api/admins/${encodeURIComponent(username)}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) throw new Error('Delete failed');
-    showToast('Admin deleted');
-    loadAdminList();
-  } catch (err) {
-    showToast(err.message);
-  }
+@keyframes rainbow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
 }
 
-showCreateForm.addEventListener('click', () => {
-  createAdminForm.style.display = 'block';
-  showCreateForm.style.display = 'none';
-  adminModalError.textContent = '';
-});
+.account-card__overall {
+  background: var(--accent);
+  color: #0a0a0a;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+}
 
-cancelCreateAdmin.addEventListener('click', () => {
-  createAdminForm.style.display = 'none';
-  showCreateForm.style.display = 'block';
-});
+.account-card__region {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
 
-submitCreateAdmin.addEventListener('click', async () => {
-  const username = document.getElementById('newAdminUser').value.trim();
-  const password = document.getElementById('newAdminPass').value;
-  const code = document.getElementById('newAdminCode').value.trim();
+.account-card__uuid {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 12px;
+  word-break: break-all;
+}
 
-  if (!username || !password || !code) {
-    adminModalError.textContent = 'All fields required';
-    return;
-  }
-  if (!/^\d{6}$/.test(code)) {
-    adminModalError.textContent = 'Code must be 6 digits';
-    return;
-  }
+.account-card__date {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 12px;
+}
 
-  submitCreateAdmin.disabled = true;
-  try {
-    const res = await fetch('/api/admins', {
-      method: 'POST',
-      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, code })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message);
-    
-    showToast('Admin created');
-    document.getElementById('newAdminUser').value = '';
-    document.getElementById('newAdminPass').value = '';
-    document.getElementById('newAdminCode').value = '';
-    createAdminForm.style.display = 'none';
-    showCreateForm.style.display = 'block';
-    loadAdminList();
-  } catch (err) {
-    adminModalError.textContent = err.message;
-  } finally {
-    submitCreateAdmin.disabled = false;
-  }
-});
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+}
 
-closeAdminModal.addEventListener('click', () => {
-  adminModalOverlay.classList.remove('show');
-});
+.tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
 
-adminModalOverlay.addEventListener('click', (e) => {
-  if (e.target === adminModalOverlay) adminModalOverlay.classList.remove('show');
-});
+.tier-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
 
-// Double-click brand mark to open admin management
-document.querySelector('.brand__mark').addEventListener('dblclick', openAdminModal);
+.tier-badge--ranked {
+  background: var(--surface-2);
+}
 
-logoutBtn.addEventListener('click', () => {
-  localStorage.removeItem('mcvault_token');
-  localStorage.removeItem('mcvault_admin_name');
-  updateAdminUI();
-  render();
-  showToast('Logged out.');
-});
+.tier-badge__mode {
+  color: var(--text-muted);
+  font-size: 11px;
+}
 
-updateAdminUI();
-render();
+.tier-badge__rank {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.tier-1 { border-color: #ffd700; color: #ffd700; }
+.tier-2 { border-color: #c0c0c0; color: #c0c0c0; }
+.tier-3 { border-color: #cd7f32; color: #cd7f32; }
+.tier-4 { border-color: #6b8cff; color: #6b8cff; }
+.tier-5 { border-color: #888; color: #888; }
+.tier-6 { border-color: #666; color: #666; }
+.tier-7 { border-color: #555; color: #555; }
+.tier-8 { border-color: #444; color: #444; }
+.tier-9 { border-color: #333; color: #333; }
+.tier-10 { border-color: #222; color: #222; }
+
+.tiers__empty {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.rainbow-divider {
+  height: 2px;
+  background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+  background-size: 200% auto;
+  border-radius: 1px;
+  margin: 12px 0;
+  animation: rainbow 3s linear infinite;
+}
+
+.pvptiers-status {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-style: italic;
+  padding: 8px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.account-card__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.icon-btn {
+  flex: 1;
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.icon-btn:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.icon-btn--danger:hover {
+  background: rgba(255, 68, 68, 0.1);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.add-card {
+  background: var(--surface);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-height: 280px;
+}
+
+.add-card:hover {
+  border-color: var(--accent-dim);
+  background: rgba(200, 255, 0, 0.02);
+}
+
+.add-card__circle {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+
+.add-card:hover .add-card__circle {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.add-card__title {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.add-card__sub {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.footer__sep { color: var(--border); }
+
+.footer__admin-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.footer__admin-link:hover { color: var(--accent); }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s;
+  z-index: 200;
+}
+
+.modal-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  width: 100%;
+  max-width: 420px;
+  transform: scale(0.95);
+  transition: transform 0.2s;
+}
+
+.modal-overlay.show .modal {
+  transform: scale(1);
+}
+
+.modal h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.modal__subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.modal__input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  margin-bottom: 8px;
+}
+
+.modal__input:focus {
+  outline: none;
+  border-color: #444;
+}
+
+.modal__error {
+  color: #d98c8c;
+  font-size: 12px;
+  min-height: 18px;
+  margin-bottom: 12px;
+}
+
+.modal__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.modal__btn {
+  flex: 1;
+  padding: 11px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  border: none;
+}
+
+.modal__btn:hover { opacity: 0.9; }
+.modal__btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.modal__btn--secondary {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.modal__btn--primary {
+  background: var(--accent);
+  color: #0a0a0a;
+}
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s;
+  z-index: 300;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.toast.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.login-field {
+  margin-bottom: 14px;
+}
+
+.login-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+}
+
+.login-field input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.login-field input:focus {
+  outline: none;
+  border-color: #444;
+}
+
+.admin-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.admin-item__info {
+  font-size: 13px;
+}
+
+.admin-item__code {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.admin-item__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-item__btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.admin-item__btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .topbar { flex-wrap: wrap; gap: 12px; }
+  .capacity { order: 3; width: 100%; }
+  .grid { grid-template-columns: 1fr; }
+  .content { padding: 16px; }
+}
