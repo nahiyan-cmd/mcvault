@@ -109,7 +109,7 @@ function render() {
         canvas,
         width: canvas.parentElement.clientWidth || 200,
         height: 200,
-        skin: acc.skinUrl || 'https://mc-heads.net/skin/MHF_Steve',
+        skin: acc.skinUrl || 'https://crafatar.com/skins/MHF_Steve',
       });
 
       viewer.controls.enableRotate = true;
