@@ -241,43 +241,34 @@ app.delete('/api/accounts', adminAuth, (req, res) => {
 });
 
 // ─── MINECRAFT APIs ─────────────────────────────────────────────────────────────
+// Use Ashcon API for reliable username -> UUID lookup (keeps original skin/tier logic)
 app.get('/api/lookup/:username', async (req, res) => {
   try {
     const axios = require('axios');
-    const username = encodeURIComponent(req.params.username);
+    const username = req.params.username;
     
-    // Try multiple APIs in order
-    let uuid, name;
+    // Ashcon API - reliable, returns UUID + username
+    const { data } = await axios.get(
+      `https://api.ashcon.app/mojang/v2/user/${encodeURIComponent(username)}`,
+      { timeout: 8000, headers: { 'Accept': 'application/json' } }
+    );
     
-    // API 1: Ashcon (most reliable)
-    try {
-      const { data } = await axios.get(`https://api.ashcon.app/mojang/v2/user/${username}`, { timeout: 5000 });
-      uuid = data.uuid.replace(/-/g, '');
-      name = data.username;
-    } catch {
-      // API 2: Geyser
-      try {
-        const { data } = await axios.get(`https://api.geysermc.org/v2/xbox/xuid?gamertag=${username}`, { timeout: 5000 });
-        const xuid = data.xuid;
-        const { data: profileData } = await axios.get(`https://api.geysermc.org/v2/xbox/profile?xuid=${xuid}`, { timeout: 5000 });
-        uuid = profileData.id;
-        name = profileData.name;
-      } catch {
-        // API 3: Direct Mojang (fallback)
-        const { data } = await axios.get(`https://api.mojang.com/users/profiles/minecraft/${username}`, { timeout: 5000 });
-        uuid = data.id;
-        name = data.name;
-      }
-    }
-
-    const skinUrl = `https://crafatar.com/renders/body/${uuid}?overlay=true&scale=4&default=MHF_Steve`;
+    const uuid = data.uuid.replace(/-/g, '');
+    const name = data.username;
+    
+    // Original skin URL from your files
+    const skinUrl = `https://crafatar.com/renders/body/${uuid}?overlay=true&scale=4`;
+    
     res.json({ username: name, uuid, skinUrl });
   } catch (err) {
-    console.error('Lookup error:', err.message);
-    res.status(404).json({ message: 'Player not found. Try a different username or check spelling.' });
+    console.error('Lookup error:', err.response?.status, err.message);
+    res.status(404).json({ 
+      message: 'Player not found. Check spelling or try a different username.' 
+    });
   }
 });
 
+// Original MCTiers API from your files
 app.get('/api/tiers/:username', async (req, res) => {
   try {
     const { data } = await require('axios').get(
