@@ -15,29 +15,33 @@ const modalError = document.getElementById('modalError');
 const modalCancel = document.getElementById('modalCancel');
 const modalSubmit = document.getElementById('modalSubmit');
 
+// Real MCTiers API ranking keys + display labels
 const GAMEMODES = [
-  { key: 'sword',        label: 'Sword'   },
-  { key: 'uhc',          label: 'UHC'     },
-  { key: 'diamondPot',   label: 'DiaPot'  },
-  { key: 'netheritePot', label: 'NethPot' },
-  { key: 'smp',          label: 'SMP'     },
-  { key: 'diamondSmp',   label: 'DiaSMP'  },
-  { key: 'axe',          label: 'Axe'     },
-  { key: 'mace',         label: 'Mace'    },
-  { key: 'crystal',      label: 'Crystal' },
-  { key: 'cart',         label: 'Cart'    },
+  { key: 'sword',     label: 'Sword'   },
+  { key: 'uhc',       label: 'UHC'     },
+  { key: 'pot',       label: 'DiaPot'  },
+  { key: 'netherPot', label: 'NethPot' },
+  { key: 'smp',       label: 'SMP'     },
+  { key: 'axe',       label: 'Axe'     },
+  { key: 'mace',      label: 'Mace'    },
+  { key: 'vanilla',   label: 'Crystal' },
+  { key: 'cart',      label: 'Cart'    },
 ];
+
+// Convert MCTiers numeric tier + pos into display string e.g. "HT3", "LT5"
+function formatTier(ranking) {
+  if (!ranking) return null;
+  if (ranking.retired) return null; // treat retired as unranked
+  const ht = ranking.pos === 0 ? 'HT' : 'LT';
+  return `${ht}${ranking.tier}`;
+}
 
 let editingIndex = null;
 let isSubmitting = false;
 
-// Track all skinview3d instances so we can dispose them on re-render
-const skinViewers = [];
-
 function loadAccounts() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch { return []; }
 }
 
 function saveAccounts(accounts) {
@@ -53,41 +57,41 @@ function showToast(message, duration = 3500) {
 }
 
 function render() {
-  // Dispose existing 3D viewers before wiping the DOM
-  skinViewers.forEach(v => { try { v.dispose(); } catch {} });
-  skinViewers.length = 0;
-
   const accounts = loadAccounts();
   grid.innerHTML = '';
-
   introBlock.style.display = accounts.length === 0 ? 'block' : 'none';
 
   accounts.forEach((acc, index) => {
     const card = document.createElement('div');
     card.className = 'account-card';
 
-    const gameModes = acc.gameModes || {};
+    const rankings = acc.rankings || {};
 
     const tiersHtml = GAMEMODES.map(({ key, label }) => {
-      const entry = gameModes[key];
-      const tier = entry?.tier;
-      // Colour the badge if ranked
-      const ranked = !!tier;
+      const tierStr = formatTier(rankings[key]);
+      const ranked = !!tierStr;
       return `
         <div class="tier-badge${ranked ? ' tier-badge--ranked' : ''}">
           <span class="tier-badge__mode">${label}</span>
-          <span class="tier-badge__rank">${tier || '—'}</span>
+          <span class="tier-badge__rank">${tierStr || 'N/A'}</span>
         </div>
       `;
     }).join('');
 
-    const canvasId = `skin-canvas-${index}`;
+    // Best tier for display next to name — find highest (lowest tier number + HT preferred)
+    const allTiers = GAMEMODES.map(({ key }) => rankings[key]).filter(Boolean).filter(r => !r.retired);
+    const bestTier = allTiers.sort((a, b) => a.tier !== b.tier ? a.tier - b.tier : a.pos - b.pos)[0];
+    const bestTierStr = bestTier ? formatTier(bestTier) : null;
 
     card.innerHTML = `
       <div class="account-card__skin">
-        <canvas id="${canvasId}" class="skin-canvas"></canvas>
+        <img src="${acc.skinUrl || ''}" alt="${acc.username}" onerror="this.style.display='none'" />
       </div>
-      <div class="account-card__name">${acc.username}${acc.overall ? ` <span class="account-card__overall">(${acc.overall})</span>` : ''}</div>
+      <div class="account-card__name">
+        ${acc.username}
+        ${bestTierStr ? `<span class="account-card__overall">${bestTierStr}</span>` : ''}
+        ${acc.region ? `<span class="account-card__region">${acc.region}</span>` : ''}
+      </div>
       <div class="account-card__uuid">${acc.uuid || ''}</div>
       <div class="account-card__date">Added ${acc.addedDate}</div>
       <div class="tiers">${tiersHtml}</div>
@@ -97,35 +101,7 @@ function render() {
         <button class="icon-btn icon-btn--danger" data-action="delete" data-index="${index}">Remove</button>
       </div>
     `;
-
     grid.appendChild(card);
-
-    // Boot 3D skin viewer after the canvas is in the DOM
-    requestAnimationFrame(() => {
-      const canvas = document.getElementById(canvasId);
-      if (!canvas || !window.skinview3d) return;
-
-      const viewer = new skinview3d.SkinViewer({
-        canvas,
-        width: canvas.parentElement.clientWidth || 200,
-        height: 200,
-        skin: acc.skinUrl || 'https://crafatar.com/skins/MHF_Steve',
-      });
-
-      viewer.controls.enableRotate = true;
-      viewer.controls.enableZoom = false;
-      viewer.controls.enablePan = false;
-      viewer.autoRotate = true;
-      viewer.autoRotateSpeed = 0.8;
-      viewer.animation = new skinview3d.IdleAnimation();
-      viewer.renderer.setClearColor(0x000000, 0); // transparent background
-
-      // Stop auto-rotate while user drags
-      canvas.addEventListener('mousedown', () => { viewer.autoRotate = false; });
-      canvas.addEventListener('touchstart', () => { viewer.autoRotate = false; }, { passive: true });
-
-      skinViewers.push(viewer);
-    });
   });
 
   if (accounts.length < MAX_SLOTS) {
@@ -168,7 +144,6 @@ function openModal(index) {
   modalError.textContent = '';
   usernameInput.value = '';
   modalSubmit.disabled = false;
-
   if (index === null) {
     modalTitle.textContent = 'Add Account';
     modalSubmit.textContent = 'Fetch & Save';
@@ -178,7 +153,6 @@ function openModal(index) {
     modalSubmit.textContent = 'Update';
     usernameInput.value = accounts[index].username;
   }
-
   modalOverlay.classList.add('show');
   setTimeout(() => usernameInput.focus(), 50);
 }
@@ -202,7 +176,6 @@ async function handleModalSubmit() {
   isSubmitting = true;
   modalSubmit.disabled = true;
   modalSubmit.textContent = 'Fetching...';
-
   const currentEditingIndex = editingIndex;
 
   try {
@@ -212,17 +185,15 @@ async function handleModalSubmit() {
     const accounts = loadAccounts();
     const normalizedUUID = profile.uuid.toLowerCase();
     const duplicate = accounts.some((a, i) => a.uuid.toLowerCase() === normalizedUUID && i !== currentEditingIndex);
-    if (duplicate) {
-      modalError.textContent = `${profile.username} is already in your vault.`;
-      return;
-    }
+    if (duplicate) { modalError.textContent = `${profile.username} is already in your vault.`; return; }
 
     const entry = {
       username: profile.username,
       uuid: profile.uuid,
       skinUrl: profile.skinUrl,
-      gameModes: tierData?.gameModes || {},
-      overall: tierData?.overall || null,
+      rankings: tierData?.rankings || {},
+      leaderboardPos: tierData?.leaderboardPos || null,
+      region: tierData?.region || null,
       addedDate: currentEditingIndex === null
         ? new Date().toISOString().split('T')[0]
         : accounts[currentEditingIndex].addedDate,
@@ -257,7 +228,6 @@ modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) c
 grid.addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
   if (!btn) return;
-
   const index = Number(btn.dataset.index);
   const accounts = loadAccounts();
   const acc = accounts[index];
@@ -281,20 +251,21 @@ grid.addEventListener('click', async (e) => {
         lookupUsername(acc.username).catch(() => null),
         fetchTiers(acc.username),
       ]);
-      const freshAccounts = loadAccounts();
-      if (!freshAccounts[index]) return;
+      const fresh = loadAccounts();
+      if (!fresh[index]) return;
       if (profile) {
-        freshAccounts[index].uuid = profile.uuid;
-        freshAccounts[index].skinUrl = profile.skinUrl;
-        freshAccounts[index].username = profile.username;
+        fresh[index].uuid = profile.uuid;
+        fresh[index].skinUrl = profile.skinUrl;
+        fresh[index].username = profile.username;
       }
       if (tierData) {
-        freshAccounts[index].gameModes = tierData.gameModes || {};
-        freshAccounts[index].overall = tierData.overall || null;
+        fresh[index].rankings = tierData.rankings || {};
+        fresh[index].leaderboardPos = tierData.leaderboardPos || null;
+        fresh[index].region = tierData.region || null;
       }
-      saveAccounts(freshAccounts);
+      saveAccounts(fresh);
       render();
-      showToast(`${freshAccounts[index].username} refreshed.`);
+      showToast(`${fresh[index].username} refreshed.`);
     } catch {
       showToast(`Could not refresh ${acc.username}.`);
     }
