@@ -27,6 +27,7 @@ const submitCreateAdmin = document.getElementById('submitCreateAdmin');
 const closeAdminModal = document.getElementById('closeAdminModal');
 const adminModalError = document.getElementById('adminModalError');
 
+// Original gamemodes from your files
 const GAMEMODES = [
   { key: 'sword',     label: 'Sword'   },
   { key: 'uhc',       label: 'UHC'     },
@@ -39,6 +40,7 @@ const GAMEMODES = [
   { key: 'cart',      label: 'Cart'    },
 ];
 
+// Original tier formatter from your files
 function formatTier(ranking) {
   if (!ranking) return null;
   if (ranking.retired) return null;
@@ -80,17 +82,6 @@ function updateAdminUI() {
   }
 }
 
-function getSkinUrl(uuid) {
-  if (!uuid) return '';
-  return `https://crafatar.com/renders/body/${uuid}?overlay=true&scale=4&default=MHF_Steve`;
-}
-
-function handleSkinError(img) {
-  img.onerror = null;
-  img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="64" height="64"%3E%3Crect width="64" height="64" fill="%23222"/%3E%3Ctext x="32" y="36" text-anchor="middle" fill="%23666" font-size="24"%3F%3C/text%3E%3C/svg%3E';
-  img.style.opacity = '0.5';
-}
-
 function render(accounts) {
   accountsCache = accounts || [];
   grid.innerHTML = '';
@@ -102,6 +93,7 @@ function render(accounts) {
 
     const rankings = acc.rankings || {};
 
+    // Original tier badges from your files
     const tiersHtml = GAMEMODES.map(({ key, label }) => {
       const ranking = rankings[key];
       const tierStr = formatTier(ranking);
@@ -115,6 +107,7 @@ function render(accounts) {
       `;
     }).join('');
 
+    // Best tier logic from your files
     const allTiers = GAMEMODES.map(({ key }) => rankings[key]).filter(Boolean).filter(r => !r.retired);
     const bestTier = allTiers.sort((a, b) => {
       const ta = Number(a.tier), tb = Number(b.tier);
@@ -124,11 +117,12 @@ function render(accounts) {
     const bestTierStr = bestTier ? formatTier(bestTier) : null;
     const isGM = allTiers.some(r => Number(r.tier) === 1 && Number(r.pos) === 0);
 
-    const skinUrl = getSkinUrl(acc.uuid);
+    // Original skin URL from your files
+    const skinUrl = acc.skinUrl || '';
 
     card.innerHTML = `
       <div class="account-card__skin">
-        <img src="${skinUrl}" alt="${acc.username}" onerror="handleSkinError(this)" />
+        <img src="${skinUrl}" alt="${acc.username}" onerror="this.style.display='none'" />
       </div>
       <div class="account-card__name">
         ${acc.username}
@@ -139,7 +133,7 @@ function render(accounts) {
       <div class="account-card__uuid">${acc.uuid || ''}</div>
       <div class="account-card__date">Added ${acc.addedDate}</div>
       <div class="section-label">MCTiers</div>
-      <div class="tiers">${tiersHtml || '<span class="tiers__empty">No gamemode tested</span>'}</div>
+      <div class="tiers">${tiersHtml || '<span class="tiers__empty">None gamemode tested</span>'}</div>
       <div class="rainbow-divider"></div>
       <div class="section-label">PvPTiers</div>
       <div class="pvptiers-status">Under Maintenance</div>
@@ -184,6 +178,7 @@ async function loadAccounts() {
   }
 }
 
+// Original fetchTiers from your files
 async function fetchTiers(username) {
   try {
     const res = await fetch(`/api/tiers/${encodeURIComponent(username)}`);
@@ -192,14 +187,10 @@ async function fetchTiers(username) {
   } catch { return null; }
 }
 
+// Original lookupUsername from your files
 async function lookupUsername(username) {
   const res = await fetch(`/api/lookup/${encodeURIComponent(username)}`);
-  let data;
-  try {
-    data = await res.json();
-  } catch {
-    throw new Error('Server returned invalid response. Try again.');
-  }
+  const data = await res.json();
   if (!res.ok) throw new Error(data.message || 'Lookup failed.');
   return data;
 }
