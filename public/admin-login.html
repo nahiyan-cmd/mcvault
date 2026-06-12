@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MC Vault — Admin Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+<style>
+  .login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px 32px;
+    width: 100%;
+    max-width: 400px;
+  }
+
+  .login-box__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .login-box__mark {
+    width: 40px; height: 40px; border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600; font-size: 13px;
+  }
+
+  .login-box__title { font-size: 20px; font-weight: 700; }
+  .login-box__sub { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+
+  .login-field {
+    margin-bottom: 14px;
+  }
+
+  .login-field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .login-field input {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+  }
+
+  .login-field input:focus {
+    outline: none;
+    border-color: #444;
+  }
+
+  .login-error {
+    color: #d98c8c;
+    font-size: 12px;
+    min-height: 18px;
+    margin-bottom: 10px;
+  }
+
+  .login-btn {
+    width: 100%;
+    padding: 11px;
+    background: var(--accent);
+    color: #0a0a0a;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    margin-top: 4px;
+  }
+  .login-btn:hover { opacity: 0.9; }
+  .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .login-back {
+    display: block;
+    text-align: center;
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--text-faint);
+    text-decoration: none;
+  }
+  .login-back:hover { color: var(--text-muted); }
+
+  .code-hint {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+</style>
+</head>
+<body>
+<div class="login-page">
+  <div class="login-box">
+    <div class="login-box__brand">
+      <div class="login-box__mark">MV</div>
+      <div>
+        <div class="login-box__title">Admin Login</div>
+        <div class="login-box__sub">MC VAULT · RESTRICTED ACCESS</div>
+      </div>
+    </div>
+
+    <div class="login-field">
+      <label>Username</label>
+      <input type="text" id="loginUsername" placeholder="admin username" autocomplete="username" />
+    </div>
+
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+
+    <div class="login-field">
+      <label>Secret Code</label>
+      <input type="text" id="loginCode" placeholder="6-digit code" maxlength="6" autocomplete="one-time-code"
+             inputmode="numeric" pattern="\d{6}" />
+      <div class="code-hint">Enter the 6-digit code assigned to your account</div>
+    </div>
+
+    <div class="login-error" id="loginError"></div>
+
+    <button class="login-btn" id="loginBtn">Login</button>
+    <a href="/" class="login-back">← Back to Vault</a>
+  </div>
+</div>
+
+<script>
+  // If already logged in, redirect
+  if (localStorage.getItem('mcvault_token')) {
+    window.location.href = '/';
+  }
+
+  const loginBtn = document.getElementById('loginBtn');
+  const loginError = document.getElementById('loginError');
+
+  async function doLogin() {
+    const username = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const code = document.getElementById('loginCode').value.trim();
+
+    if (!username || !password || !code) {
+      loginError.textContent = 'All fields are required.';
+      return;
+    }
+    if (!/^\d{6}$/.test(code)) {
+      loginError.textContent = 'Code must be exactly 6 digits.';
+      return;
+    }
+
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Logging in...';
+    loginError.textContent = '';
+
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, code })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Login failed.');
+      localStorage.setItem('mcvault_token', data.token);
+      localStorage.setItem('mcvault_admin_name', data.username);
+      window.location.href = '/';
+    } catch (err) {
+      loginError.textContent = err.message;
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Login';
+    }
+  }
+
+  loginBtn.addEventListener('click', doLogin);
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+</script>
+</body>
+</html>
