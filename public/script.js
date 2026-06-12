@@ -31,12 +31,13 @@ const GAMEMODES = [
 let editingIndex = null;
 let isSubmitting = false;
 
+// Track all skinview3d instances so we can dispose them on re-render
+const skinViewers = [];
+
 function loadAccounts() {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 function saveAccounts(accounts) {
@@ -48,13 +49,14 @@ function showToast(message, duration = 3500) {
   if (toastTimer) clearTimeout(toastTimer);
   toast.textContent = message;
   toast.classList.add('show');
-  toastTimer = setTimeout(() => {
-    toast.classList.remove('show');
-    toastTimer = null;
-  }, duration);
+  toastTimer = setTimeout(() => { toast.classList.remove('show'); toastTimer = null; }, duration);
 }
 
 function render() {
+  // Dispose existing 3D viewers before wiping the DOM
+  skinViewers.forEach(v => { try { v.dispose(); } catch {} });
+  skinViewers.length = 0;
+
   const accounts = loadAccounts();
   grid.innerHTML = '';
 
@@ -67,29 +69,25 @@ function render() {
     const gameModes = acc.gameModes || {};
 
     const tiersHtml = GAMEMODES.map(({ key, label }) => {
-      const tier = gameModes[key]?.tier;
+      const entry = gameModes[key];
+      const tier = entry?.tier;
+      // Colour the badge if ranked
+      const ranked = !!tier;
       return `
-        <div class="tier-badge">
+        <div class="tier-badge${ranked ? ' tier-badge--ranked' : ''}">
           <span class="tier-badge__mode">${label}</span>
           <span class="tier-badge__rank">${tier || '—'}</span>
         </div>
       `;
     }).join('');
 
-    const testedCount = GAMEMODES.filter(({ key }) => gameModes[key]?.tier).length;
-    const tierPercent = Math.round((testedCount / GAMEMODES.length) * 100);
+    const canvasId = `skin-canvas-${index}`;
 
     card.innerHTML = `
       <div class="account-card__skin">
-        ${acc.skinUrl
-          ? `<img src="${acc.skinUrl}" alt="${acc.username} skin render" />`
-          : `<span style="color:var(--text-faint); font-size:12px;">No skin</span>`
-        }
-        <div class="tier-meter" data-pct="${tierPercent}">
-          <span>${tierPercent}%</span>
-        </div>
+        <canvas id="${canvasId}" class="skin-canvas"></canvas>
       </div>
-      <div class="account-card__name">${acc.username}${acc.overall ? ` <span style="color:var(--text-faint); font-weight:400; font-size:12px;">(${acc.overall})</span>` : ''}</div>
+      <div class="account-card__name">${acc.username}${acc.overall ? ` <span class="account-card__overall">(${acc.overall})</span>` : ''}</div>
       <div class="account-card__uuid">${acc.uuid || ''}</div>
       <div class="account-card__date">Added ${acc.addedDate}</div>
       <div class="tiers">${tiersHtml}</div>
@@ -101,12 +99,33 @@ function render() {
     `;
 
     grid.appendChild(card);
-  });
 
-  // Apply conic-gradient via JS — avoids CSS calc(var(--pct)*1%) browser inconsistency
-  grid.querySelectorAll('.tier-meter[data-pct]').forEach(el => {
-    const pct = el.dataset.pct;
-    el.style.background = `conic-gradient(var(--accent) ${pct}%, var(--surface-2) 0deg)`;
+    // Boot 3D skin viewer after the canvas is in the DOM
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas || !window.skinview3d) return;
+
+      const viewer = new skinview3d.SkinViewer({
+        canvas,
+        width: canvas.parentElement.clientWidth || 200,
+        height: 200,
+        skin: acc.skinUrl || 'https://mc-heads.net/skin/MHF_Steve',
+      });
+
+      viewer.controls.enableRotate = true;
+      viewer.controls.enableZoom = false;
+      viewer.controls.enablePan = false;
+      viewer.autoRotate = true;
+      viewer.autoRotateSpeed = 0.8;
+      viewer.animation = new skinview3d.IdleAnimation();
+      viewer.renderer.setClearColor(0x000000, 0); // transparent background
+
+      // Stop auto-rotate while user drags
+      canvas.addEventListener('mousedown', () => { viewer.autoRotate = false; });
+      canvas.addEventListener('touchstart', () => { viewer.autoRotate = false; }, { passive: true });
+
+      skinViewers.push(viewer);
+    });
   });
 
   if (accounts.length < MAX_SLOTS) {
@@ -133,9 +152,7 @@ async function fetchTiers(username) {
     const res = await fetch(`/api/tiers/${encodeURIComponent(username)}`);
     if (!res.ok) return null;
     return await res.json();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function lookupUsername(username) {
@@ -174,12 +191,8 @@ function closeModal() {
 
 async function handleModalSubmit() {
   if (isSubmitting) return;
-
   const username = usernameInput.value.trim();
-  if (!username) {
-    modalError.textContent = 'Please enter a username.';
-    return;
-  }
+  if (!username) { modalError.textContent = 'Please enter a username.'; return; }
   if (!/^[a-zA-Z0-9_]{3,16}$/.test(username)) {
     modalError.textContent = 'Usernames must be 3–16 characters (letters, numbers, underscores).';
     return;
@@ -216,10 +229,7 @@ async function handleModalSubmit() {
     };
 
     if (currentEditingIndex === null) {
-      if (accounts.length >= MAX_SLOTS) {
-        modalError.textContent = 'Vault is full (10/10).';
-        return;
-      }
+      if (accounts.length >= MAX_SLOTS) { modalError.textContent = 'Vault is full (10/10).'; return; }
       accounts.push(entry);
       showToast(`${profile.username} added to your vault.`);
     } else {
@@ -241,12 +251,8 @@ async function handleModalSubmit() {
 
 modalCancel.addEventListener('click', closeModal);
 modalSubmit.addEventListener('click', handleModalSubmit);
-usernameInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') handleModalSubmit();
-});
-modalOverlay.addEventListener('click', (e) => {
-  if (e.target === modalOverlay) closeModal();
-});
+usernameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleModalSubmit(); });
+modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
 
 grid.addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
@@ -264,24 +270,19 @@ grid.addEventListener('click', async (e) => {
     showToast(`${acc.username} removed from vault.`);
   }
 
-  if (btn.dataset.action === 'edit') {
-    openModal(index);
-  }
+  if (btn.dataset.action === 'edit') openModal(index);
 
   if (btn.dataset.action === 'refresh') {
     btn.disabled = true;
     btn.textContent = '...';
     showToast(`Refreshing ${acc.username}...`);
-
     try {
       const [profile, tierData] = await Promise.all([
         lookupUsername(acc.username).catch(() => null),
         fetchTiers(acc.username),
       ]);
-
       const freshAccounts = loadAccounts();
       if (!freshAccounts[index]) return;
-
       if (profile) {
         freshAccounts[index].uuid = profile.uuid;
         freshAccounts[index].skinUrl = profile.skinUrl;
@@ -291,7 +292,6 @@ grid.addEventListener('click', async (e) => {
         freshAccounts[index].gameModes = tierData.gameModes || {};
         freshAccounts[index].overall = tierData.overall || null;
       }
-
       saveAccounts(freshAccounts);
       render();
       showToast(`${freshAccounts[index].username} refreshed.`);
