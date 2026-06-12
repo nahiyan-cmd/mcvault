@@ -15,6 +15,7 @@ const modalError = document.getElementById('modalError');
 const modalCancel = document.getElementById('modalCancel');
 const modalSubmit = document.getElementById('modalSubmit');
 
+// Real MCTiers API ranking keys + display labels
 const GAMEMODES = [
   { key: 'sword',     label: 'Sword'   },
   { key: 'uhc',       label: 'UHC'     },
@@ -27,9 +28,10 @@ const GAMEMODES = [
   { key: 'cart',      label: 'Cart'    },
 ];
 
+// Convert MCTiers numeric tier + pos into display string e.g. "HT3", "LT5"
 function formatTier(ranking) {
   if (!ranking) return null;
-  if (ranking.retired) return null;
+  if (ranking.retired) return null; // treat retired as unranked
   const ht = ranking.pos === 0 ? 'HT' : 'LT';
   return `${ht}${ranking.tier}`;
 }
@@ -78,9 +80,15 @@ function render() {
       `;
     }).join('');
 
+    // Best tier for display next to name — find highest (lowest tier number + HT preferred)
     const allTiers = GAMEMODES.map(({ key }) => rankings[key]).filter(Boolean).filter(r => !r.retired);
-    const bestTier = allTiers.sort((a, b) => a.tier !== b.tier ? a.tier - b.tier : a.pos - b.pos)[0];
+    const bestTier = allTiers.sort((a, b) => {
+      const ta = Number(a.tier), tb = Number(b.tier);
+      if (ta !== tb) return ta - tb;
+      return Number(a.pos) - Number(b.pos);
+    })[0];
     const bestTierStr = bestTier ? formatTier(bestTier) : null;
+    const isGM = allTiers.some(r => Number(r.tier) === 1 && Number(r.pos) === 0);
 
     card.innerHTML = `
       <div class="account-card__skin">
@@ -88,12 +96,17 @@ function render() {
       </div>
       <div class="account-card__name">
         ${acc.username}
+        ${isGM ? `<span class="account-card__gm">GM</span>` : ''}
         ${bestTierStr ? `<span class="account-card__overall">${bestTierStr}</span>` : ''}
         ${acc.region ? `<span class="account-card__region">${acc.region}</span>` : ''}
       </div>
       <div class="account-card__uuid">${acc.uuid || ''}</div>
       <div class="account-card__date">Added ${acc.addedDate}</div>
+      <div class="section-label">MCTiers</div>
       <div class="tiers">${tiersHtml || '<span class="tiers__empty">None gamemode tested</span>'}</div>
+      <div class="rainbow-divider"></div>
+      <div class="section-label">PvPTiers</div>
+      <div class="pvptiers-status">Under Maintenance</div>
       <div class="account-card__actions">
         <button class="icon-btn" data-action="edit" data-index="${index}">Edit</button>
         <button class="icon-btn" data-action="refresh" data-index="${index}">Refresh</button>
