@@ -36,7 +36,6 @@ function formatTier(ranking) {
 
 let editingIndex = null;
 let isSubmitting = false;
-let skinViewers = [];
 
 function loadAccounts() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
@@ -56,9 +55,6 @@ function showToast(message, duration = 3500) {
 }
 
 function render() {
-  skinViewers.forEach(v => { try { v.dispose(); } catch {} });
-  skinViewers = [];
-
   const accounts = loadAccounts();
   grid.innerHTML = '';
   introBlock.style.display = accounts.length === 0 ? 'block' : 'none';
@@ -86,7 +82,7 @@ function render() {
 
     card.innerHTML = `
       <div class="account-card__skin">
-        <canvas id="skin-canvas-${index}" width="200" height="200"></canvas>
+        <img src="${acc.skinUrl || ''}" alt="${acc.username}" onerror="this.style.display='none'" />
       </div>
       <div class="account-card__name">
         ${acc.username}
@@ -122,25 +118,6 @@ function render() {
   capacityCount.textContent = `${accounts.length}/${MAX_SLOTS} accounts`;
   capacityPercent.textContent = `${percent}% full`;
   capacityFill.style.width = `${percent}%`;
-
-  accounts.forEach((acc, index) => {
-    if (!acc.skinUrl) return;
-    const canvas = document.getElementById(`skin-canvas-${index}`);
-    if (!canvas) return;
-    try {
-      const viewer = new skinview3d.SkinViewer({
-        canvas,
-        width: 200,
-        height: 200,
-        skin: acc.skinUrl,
-      });
-      viewer.controls.enableZoom = false;
-      viewer.autoRotate = true;
-      skinViewers.push(viewer);
-    } catch (e) {
-      console.error('skin viewer failed', e);
-    }
-  });
 }
 
 async function fetchTiers(username) {
