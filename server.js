@@ -9,7 +9,7 @@ const { PORT = 3000 } = process.env;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Look up a Minecraft username -> uuid (and skin url via crafatar)
+// Look up a Minecraft username -> uuid + skin render
 app.get('/api/lookup/:username', async (req, res) => {
   const { username } = req.params;
 
@@ -20,7 +20,7 @@ app.get('/api/lookup/:username', async (req, res) => {
 
     const uuid = mojangRes.data.id;
     const correctUsername = mojangRes.data.name;
-    const skinUrl = `https://crafatar.com/renders/body/${uuid}`;
+    const skinUrl = `https://mc-heads.net/body/${uuid}`;
 
     res.json({ username: correctUsername, uuid, skinUrl });
   } catch (err) {
@@ -32,7 +32,7 @@ app.get('/api/lookup/:username', async (req, res) => {
   }
 });
 
-// Fetch MCTiers / PvP tier data for a username
+// Fetch MCTiers tier data for a username
 app.get('/api/tiers/:username', async (req, res) => {
   const { username } = req.params;
 
@@ -44,7 +44,7 @@ app.get('/api/tiers/:username', async (req, res) => {
 
     const tiersRes = await axios.get(`https://mctiers.com/api/profile/${uuid}`);
 
-    res.json({ uuid, tiers: tiersRes.data });
+    res.json({ uuid, raw: tiersRes.data });
   } catch (err) {
     console.error('Tier lookup failed:', err.response?.data || err.message);
     res.status(err.response?.status || 500).json({
