@@ -19,29 +19,40 @@
       <span class="brand__sub">Account Manager</span>
     </div>
   </div>
-  <div class="capacity">
-    <div class="capacity__label">
-      <span id="capacityCount">0/10 accounts</span>
-      <span id="capacityPercent">0% full</span>
+  <div class="topbar__right">
+    <div class="capacity">
+      <div class="capacity__label">
+        <span id="capacityCount">0/10 accounts</span>
+        <span id="capacityPercent">0% full</span>
+      </div>
+      <div class="capacity__track">
+        <div class="capacity__fill" id="capacityFill"></div>
+      </div>
     </div>
-    <div class="capacity__track">
-      <div class="capacity__fill" id="capacityFill"></div>
+    <!-- Admin badge: shown only when logged in as admin -->
+    <div class="admin-badge" id="adminBadge" style="display:none">
+      <span class="admin-badge__dot"></span>
+      <span id="adminBadgeName">admin</span>
+      <button class="admin-badge__logout" id="logoutBtn">Logout</button>
     </div>
   </div>
 </header>
 
 <main class="content">
   <div class="intro" id="introBlock">
-    <h1>Your vault is empty</h1>
-    <p>Add up to 10 Minecraft accounts to get started.</p>
+    <h1>Vault is empty</h1>
+    <p>No accounts have been added yet.</p>
   </div>
   <div class="grid" id="accountGrid"></div>
 </main>
 
 <footer class="footer">
   <span>Created by The Lord NotzKing — exclusively for his special friends</span>
+  <span class="footer__sep">·</span>
+  <a href="/admin-login.html" class="footer__admin-link" id="adminFooterLink"><strong>Admin?</strong></a>
 </footer>
 
+<!-- Add/Edit Account Modal (admin only) -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <h2 id="modalTitle">Add Account</h2>
