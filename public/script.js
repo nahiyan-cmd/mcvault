@@ -19,6 +19,15 @@ const modalError = document.getElementById('modalError');
 const modalCancel = document.getElementById('modalCancel');
 const modalSubmit = document.getElementById('modalSubmit');
 
+const adminModalOverlay = document.getElementById('adminModalOverlay');
+const adminList = document.getElementById('adminList');
+const createAdminForm = document.getElementById('createAdminForm');
+const showCreateForm = document.getElementById('showCreateForm');
+const cancelCreateAdmin = document.getElementById('cancelCreateAdmin');
+const submitCreateAdmin = document.getElementById('submitCreateAdmin');
+const closeAdminModal = document.getElementById('closeAdminModal');
+const adminModalError = document.getElementById('adminModalError');
+
 const GAMEMODES = [
   { key: 'sword',     label: 'Sword'   },
   { key: 'uhc',       label: 'UHC'     },
@@ -308,6 +317,117 @@ grid.addEventListener('click', async (e) => {
     }
   }
 });
+
+// ─── Admin Management ───────────────────────────────────────────────────────────
+
+function openAdminModal() {
+  if (!isAdmin()) {
+    window.location.href = '/admin-login.html';
+    return;
+  }
+  adminModalOverlay.classList.add('show');
+  loadAdminList();
+}
+
+async function loadAdminList() {
+  try {
+    const res = await fetch('/api/admins', { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error('Failed to load admins');
+    const admins = await res.json();
+    
+    adminList.innerHTML = admins.map(a => `
+      <div class="admin-item">
+        <div class="admin-item__info">
+          <strong>${a.username}</strong>
+          <div class="admin-item__code">Code: ${a.code}</div>
+        </div>
+        ${admins.length > 1 ? `
+        <div class="admin-item__actions">
+          <button class="admin-item__btn" onclick="deleteAdmin('${a.username}')">Delete</button>
+        </div>` : ''}
+      </div>
+    `).join('');
+    
+    showCreateForm.style.display = admins.length >= 2 ? 'none' : 'block';
+  } catch (err) {
+    adminList.innerHTML = `<div class="modal__error">${err.message}</div>`;
+  }
+}
+
+async function deleteAdmin(username) {
+  if (!confirm(`Delete admin ${username}?`)) return;
+  try {
+    const res = await fetch(`/api/admins/${encodeURIComponent(username)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('Delete failed');
+    showToast('Admin deleted');
+    loadAdminList();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+showCreateForm.addEventListener('click', () => {
+  createAdminForm.style.display = 'block';
+  showCreateForm.style.display = 'none';
+  adminModalError.textContent = '';
+});
+
+cancelCreateAdmin.addEventListener('click', () => {
+  createAdminForm.style.display = 'none';
+  showCreateForm.style.display = 'block';
+});
+
+submitCreateAdmin.addEventListener('click', async () => {
+  const username = document.getElementById('newAdminUser').value.trim();
+  const password = document.getElementById('newAdminPass').value;
+  const code = document.getElementById('newAdminCode').value.trim();
+
+  if (!username || !password || !code) {
+    adminModalError.textContent = 'All fields required';
+    return;
+  }
+  if (!/^\d{6}$/.test(code)) {
+    adminModalError.textContent = 'Code must be 6 digits';
+    return;
+  }
+
+  submitCreateAdmin.disabled = true;
+  try {
+    const res = await fetch('/api/admins', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, code })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+    
+    showToast('Admin created');
+    document.getElementById('newAdminUser').value = '';
+    document.getElementById('newAdminPass').value = '';
+    document.getElementById('newAdminCode').value = '';
+    createAdminForm.style.display = 'none';
+    showCreateForm.style.display = 'block';
+    loadAdminList();
+  } catch (err) {
+    adminModalError.textContent = err.message;
+  } finally {
+    submitCreateAdmin.disabled = false;
+  }
+});
+
+closeAdminModal.addEventListener('click', () => {
+  adminModalOverlay.classList.remove('show');
+});
+
+adminModalOverlay.addEventListener('click', (e) => {
+  if (e.target === adminModalOverlay) adminModalOverlay.classList.remove('show');
+});
+
+// Double-click brand mark to open admin management
+document.querySelector('.brand__mark').addEventListener('dblclick', openAdminModal);
 
 logoutBtn.addEventListener('click', () => {
   localStorage.removeItem('mcvault_token');
