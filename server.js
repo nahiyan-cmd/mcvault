@@ -1,17 +1,22 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
+const cors = require('cors');
 const path = require('path');
 
 const app = express();
 const { PORT = 3000 } = process.env;
 
+app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Look up a Minecraft username -> uuid + skin render
 app.get('/api/lookup/:username', async (req, res) => {
   const { username } = req.params;
+
+  if (!username || username.length < 3 || username.length > 16 || !/^[a-zA-Z0-9_]+$/.test(username)) {
+    return res.status(400).json({ error: 'invalid_username', message: 'Invalid Minecraft username format.' });
+  }
 
   try {
     const mojangRes = await axios.get(
@@ -32,9 +37,12 @@ app.get('/api/lookup/:username', async (req, res) => {
   }
 });
 
-// Fetch MCTiers tier data for a username
 app.get('/api/tiers/:username', async (req, res) => {
   const { username } = req.params;
+
+  if (!username || username.length < 3 || username.length > 16 || !/^[a-zA-Z0-9_]+$/.test(username)) {
+    return res.status(400).json({ error: 'invalid_username', message: 'Invalid Minecraft username format.' });
+  }
 
   try {
     const mojangRes = await axios.get(
@@ -42,7 +50,10 @@ app.get('/api/tiers/:username', async (req, res) => {
     );
     const uuid = mojangRes.data.id;
 
-    const tiersRes = await axios.get(`https://mctiers.com/api/profile/${uuid}`);
+    // FIX: Mojang returns UUID without dashes — MCTiers requires dashes (8-4-4-4-12)
+    const uuidDashed = `${uuid.slice(0,8)}-${uuid.slice(8,12)}-${uuid.slice(12,16)}-${uuid.slice(16,20)}-${uuid.slice(20)}`;
+
+    const tiersRes = await axios.get(`https://mctiers.com/api/profile/${uuidDashed}`);
     const data = tiersRes.data;
 
     res.json({
@@ -52,8 +63,7 @@ app.get('/api/tiers/:username', async (req, res) => {
     });
   } catch (err) {
     if (err.response?.status === 404) {
-      // Player exists but has no MCTiers ranking yet
-      return res.json({ uuid: null, overall: null, gameModes: {} });
+      return res.json({ uuid: null, overall: null, gameModes: {}, unranked: true });
     }
     console.error('Tier lookup failed:', err.response?.data || err.message);
     res.status(500).json({
