@@ -51,6 +51,7 @@
   <a href="/admin-login.html" class="footer__admin-link" id="adminFooterLink"><strong>Admin?</strong></a>
 </footer>
 
+<!-- Add/Edit Account Modal -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <h2 id="modalTitle">Add Account</h2>
@@ -60,6 +61,42 @@
     <div class="modal__actions">
       <button class="modal__btn modal__btn--secondary" id="modalCancel">Cancel</button>
       <button class="modal__btn modal__btn--primary" id="modalSubmit">Fetch & Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin Management Modal -->
+<div class="modal-overlay" id="adminModalOverlay">
+  <div class="modal" style="max-width: 480px;">
+    <h2>Admin Management</h2>
+    <p class="modal__subtitle">Manage admin accounts (max 2)</p>
+    
+    <div id="adminList" style="margin-bottom: 16px;"></div>
+    
+    <div id="createAdminForm" style="display:none;">
+      <div class="login-field">
+        <label>Username</label>
+        <input type="text" id="newAdminUser" placeholder="new admin" />
+      </div>
+      <div class="login-field">
+        <label>Password</label>
+        <input type="password" id="newAdminPass" placeholder="password" />
+      </div>
+      <div class="login-field">
+        <label>6-Digit Code</label>
+        <input type="text" id="newAdminCode" placeholder="123456" maxlength="6" inputmode="numeric" pattern="\d{6}" />
+      </div>
+      <div class="modal__error" id="adminModalError"></div>
+      <div class="modal__actions">
+        <button class="modal__btn modal__btn--secondary" id="cancelCreateAdmin">Cancel</button>
+        <button class="modal__btn modal__btn--primary" id="submitCreateAdmin">Create</button>
+      </div>
+    </div>
+    
+    <button class="modal__btn modal__btn--primary" id="showCreateForm" style="width: 100%; margin-top: 8px;">Create New Admin</button>
+    
+    <div class="modal__actions" style="margin-top: 12px;">
+      <button class="modal__btn modal__btn--secondary" id="closeAdminModal" style="width: 100%;">Close</button>
     </div>
   </div>
 </div>
