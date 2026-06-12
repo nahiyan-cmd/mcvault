@@ -194,7 +194,12 @@ async function fetchTiers(username) {
 
 async function lookupUsername(username) {
   const res = await fetch(`/api/lookup/${encodeURIComponent(username)}`);
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error('Server returned invalid response. Try again.');
+  }
   if (!res.ok) throw new Error(data.message || 'Lookup failed.');
   return data;
 }
