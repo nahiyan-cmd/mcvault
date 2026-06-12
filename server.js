@@ -15,7 +15,6 @@ if (!MONGODB_URI) {
   process.exit(1);
 }
 
-// ─── MongoDB Connection ─────────────────────────────────────────────────────────
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => {
@@ -23,7 +22,6 @@ mongoose.connect(MONGODB_URI)
     process.exit(1);
   });
 
-// ─── Schemas ────────────────────────────────────────────────────────────────────
 const adminSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
@@ -60,7 +58,6 @@ function adminAuth(req, res, next) {
   }
 }
 
-// ─── SETUP: Create first admin ──────────────────────────────────────────────────
 app.post('/api/setup', async (req, res) => {
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
@@ -73,28 +70,17 @@ app.post('/api/setup', async (req, res) => {
     return res.status(400).json({ message: 'Username 3+ chars, password 4+ chars' });
   }
 
-  const existingCount = await Admin.countDocuments();
-  
-  // Remove existing same username
   await Admin.deleteOne({ username });
 
   const passwordHash = await bcrypt.hash(password, 12);
   const codeHash = await bcrypt.hash(code, 12);
 
-  const admin = new Admin({
-    username,
-    passwordHash,
-    codeHash,
-    code
-  });
-
+  const admin = new Admin({ username, passwordHash, codeHash, code });
   await admin.save();
 
-  // Keep only 2 max
   const allAdmins = await Admin.find().sort({ createdAt: 1 });
   if (allAdmins.length > 2) {
-    const toDelete = allAdmins.slice(0, allAdmins.length - 2);
-    for (const a of toDelete) {
+    for (const a of allAdmins.slice(0, allAdmins.length - 2)) {
       await Admin.deleteOne({ _id: a._id });
     }
   }
@@ -103,7 +89,6 @@ app.post('/api/setup', async (req, res) => {
   res.json({ token, username, message: 'Admin created' });
 });
 
-// ─── LOGIN ──────────────────────────────────────────────────────────────────────
 app.post('/api/admin/login', async (req, res) => {
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
@@ -124,7 +109,6 @@ app.post('/api/admin/login', async (req, res) => {
   res.json({ token, username });
 });
 
-// ─── LIST ADMINS ────────────────────────────────────────────────────────────────
 app.get('/api/admins', adminAuth, async (req, res) => {
   const admins = await Admin.find({}, { passwordHash: 0, codeHash: 0 });
   res.json(admins.map(a => ({
@@ -134,7 +118,6 @@ app.get('/api/admins', adminAuth, async (req, res) => {
   })));
 });
 
-// ─── CREATE ADMIN ─────────────────────────────────────────────────────────────────
 app.post('/api/admins', adminAuth, async (req, res) => {
   const { username, password, code } = req.body;
   if (!username || !password || !code) {
@@ -145,45 +128,29 @@ app.post('/api/admins', adminAuth, async (req, res) => {
   }
 
   const count = await Admin.countDocuments();
-  if (count >= 2) {
-    return res.status(400).json({ message: 'Max 2 admins reached' });
-  }
+  if (count >= 2) return res.status(400).json({ message: 'Max 2 admins reached' });
 
   const exists = await Admin.findOne({ username });
-  if (exists) {
-    return res.status(400).json({ message: 'Admin already exists' });
-  }
+  if (exists) return res.status(400).json({ message: 'Admin already exists' });
 
   const passwordHash = await bcrypt.hash(password, 12);
   const codeHash = await bcrypt.hash(code, 12);
 
-  const admin = new Admin({
-    username,
-    passwordHash,
-    codeHash,
-    code
-  });
-
+  const admin = new Admin({ username, passwordHash, codeHash, code });
   await admin.save();
   res.status(201).json({ message: 'Admin created' });
 });
 
-// ─── DELETE ADMIN ─────────────────────────────────────────────────────────────────
 app.delete('/api/admins/:username', adminAuth, async (req, res) => {
   const count = await Admin.countDocuments();
-  if (count <= 1) {
-    return res.status(400).json({ message: 'Cannot delete the last admin' });
-  }
+  if (count <= 1) return res.status(400).json({ message: 'Cannot delete last admin' });
 
   const result = await Admin.deleteOne({ username: req.params.username });
-  if (result.deletedCount === 0) {
-    return res.status(404).json({ message: 'Admin not found' });
-  }
+  if (result.deletedCount === 0) return res.status(404).json({ message: 'Admin not found' });
 
   res.json({ message: 'Admin deleted' });
 });
 
-// ─── EDIT ADMIN ───────────────────────────────────────────────────────────────────
 app.patch('/api/admins/:username', adminAuth, async (req, res) => {
   const { password, code } = req.body;
   const admin = await Admin.findOne({ username: req.params.username });
@@ -200,20 +167,17 @@ app.patch('/api/admins/:username', adminAuth, async (req, res) => {
   res.json({ message: 'Admin updated' });
 });
 
-// ─── CHECK SETUP STATUS ───────────────────────────────────────────────────────────
 app.get('/api/setup-status', async (req, res) => {
   const count = await Admin.countDocuments();
   res.json({ setupComplete: count > 0, adminCount: count });
 });
 
-// ─── RESET ALL ADMINS (temporary, remove after use) ───────────────────────────────
 app.get('/api/reset-admins', async (req, res) => {
   await Admin.deleteMany({});
   await Account.deleteMany({});
   res.json({ message: 'All data cleared' });
 });
 
-// ─── ACCOUNTS API (cloud synced) ──────────────────────────────────────────────────
 app.get('/api/accounts', async (req, res) => {
   const accounts = await Account.find().sort({ order: 1 });
   res.json(accounts);
@@ -221,28 +185,17 @@ app.get('/api/accounts', async (req, res) => {
 
 app.post('/api/accounts', adminAuth, async (req, res) => {
   const { username, uuid, skinUrl, rankings, leaderboardPos, region, addedDate } = req.body;
-  if (!username || !uuid) {
-    return res.status(400).json({ message: 'Username and UUID required' });
-  }
+  if (!username || !uuid) return res.status(400).json({ message: 'Username and UUID required' });
 
   const count = await Account.countDocuments();
-  if (count >= 10) {
-    return res.status(400).json({ message: 'Vault is full (10/10)' });
-  }
+  if (count >= 10) return res.status(400).json({ message: 'Vault is full (10/10)' });
 
   const exists = await Account.findOne({ uuid: uuid.toLowerCase() });
-  if (exists) {
-    return res.status(400).json({ message: 'Account already in vault' });
-  }
+  if (exists) return res.status(400).json({ message: 'Account already in vault' });
 
   const account = new Account({
-    username,
-    uuid: uuid.toLowerCase(),
-    skinUrl,
-    rankings: rankings || {},
-    leaderboardPos,
-    region,
-    addedDate,
+    username, uuid: uuid.toLowerCase(), skinUrl,
+    rankings: rankings || {}, leaderboardPos, region, addedDate,
     order: count
   });
 
@@ -276,7 +229,6 @@ app.delete('/api/accounts', adminAuth, async (req, res) => {
   res.json({ message: 'All accounts cleared' });
 });
 
-// ─── MINECRAFT API PROXIES ────────────────────────────────────────────────────────
 app.get('/api/lookup/:username', async (req, res) => {
   try {
     const { data } = await require('axios').get(
@@ -303,7 +255,6 @@ app.get('/api/tiers/:username', async (req, res) => {
   }
 });
 
-// ─── HEALTH ───────────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => {
